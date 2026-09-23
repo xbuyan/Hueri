@@ -20,7 +20,7 @@ from app.config import settings
 from app.core.logging import setup_logging
 from app.db import engine, get_db, init_db
 from app.models import Tender, TenderAnalysis, User
-from app.schemas import UserCreate, UserOut, Token, TenderOut
+from app.schemas import UserCreate, UserOut, Token, TenderOut, PasswordChange
 from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
 from app.services.pipeline import (
     STATUS_QUEUED,
@@ -164,6 +164,27 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 @app.get("/api/auth/me", response_model=UserOut)
 async def read_me(current_user: User = Depends(get_current_user)):
     """Return the authenticated user's profile."""
+    return current_user
+
+
+@app.post("/api/auth/change-password", response_model=UserOut)
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def change_password(
+    request: Request,
+    payload: PasswordChange,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rotate the caller's password (requires the current one)."""
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="New password must differ from the current one")
+
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
     return current_user
 
 

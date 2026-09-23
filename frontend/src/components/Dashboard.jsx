@@ -28,6 +28,7 @@ export default function TenderScoutDashboard() {
   const [token, setToken] = useState(() => localStorage.getItem("ts_token") || "");
   const [jobStatus, setJobStatus] = useState(null);
   const [showSignIn, setShowSignIn] = useState(false);
+  const [authMode, setAuthMode] = useState("signin");
 
   useEffect(() => {
     fetchData();
@@ -98,6 +99,36 @@ export default function TenderScoutDashboard() {
   const signOut = () => {
     localStorage.removeItem("ts_token");
     setToken("");
+  };
+
+  const register = async ({ fullName, email, password }) => {
+    const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, full_name: fullName || null }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = Array.isArray(body.detail) ? body.detail[0]?.msg : body.detail;
+      throw new Error(detail || "Registration failed.");
+    }
+    // Auto sign-in after successful registration
+    return signIn(email, password);
+  };
+
+  const changePassword = async ({ currentPassword, newPassword }) => {
+    if (!token) throw new Error("Please sign in first.");
+    const res = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = Array.isArray(body.detail) ? body.detail[0]?.msg : body.detail;
+      throw new Error(detail || "Password change failed.");
+    }
+    return true;
   };
 
   const triggerCollection = async () => {
@@ -185,6 +216,12 @@ export default function TenderScoutDashboard() {
                 HU
               </div>
               <span className="text-sm font-medium text-slate-300">HUERI Advisory</span>
+              <button
+                onClick={() => { setAuthMode("change-password"); setShowSignIn(true); }}
+                className="text-xs text-slate-400 hover:text-emerald-300 border border-slate-700 hover:border-emerald-500/40 rounded-md px-2 py-1 transition"
+              >
+                Account
+              </button>
               <button
                 onClick={signOut}
                 className="text-xs text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 rounded-md px-2 py-1 transition"
@@ -387,30 +424,76 @@ export default function TenderScoutDashboard() {
         <SignInModal
           onClose={() => setShowSignIn(false)}
           onSignIn={signIn}
+          onRegister={register}
+          onChangePassword={changePassword}
+          initialMode={authMode}
+          signedIn={Boolean(token)}
         />
       )}
     </div>
   );
 }
 
-function SignInModal({ onClose, onSignIn }) {
+function SignInModal({ onClose, onSignIn, onRegister, onChangePassword, initialMode, signedIn }) {
+  const [mode, setMode] = useState(initialMode || "signin");
+  const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  const reset = () => {
+    setError(null);
+    setNotice(null);
+    setPassword("");
+    setConfirmPassword("");
+  };
+
+  const switchMode = (next) => {
+    setMode(next);
+    reset();
+  };
 
   const submit = async (e) => {
     e.preventDefault();
-    setBusy(true);
     setError(null);
+
+    if (mode === "register" && password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setBusy(true);
     try {
-      await onSignIn(username, password);
+      if (mode === "signin") {
+        await onSignIn(username, password);
+      } else if (mode === "register") {
+        await onRegister({ fullName, email: username, password });
+      } else {
+        await onChangePassword({ currentPassword: password, newPassword: confirmPassword });
+        setNotice("Password updated successfully.");
+        setPassword("");
+        setConfirmPassword("");
+        setTimeout(onClose, 1200);
+      }
     } catch (err) {
-      setError(err.message || "Sign-in failed.");
+      setError(err.message || "Something went wrong.");
     } finally {
       setBusy(false);
     }
   };
+
+  const title =
+    mode === "signin" ? "Management Sign-in"
+    : mode === "register" ? "Create Management Account"
+    : "Change Password";
+
+  const subtitle =
+    mode === "signin" ? "Required to sync tender sources."
+    : mode === "register" ? "Registers a new HUERI management user."
+    : "Rotates your password. You stay signed in.";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
@@ -423,16 +506,32 @@ function SignInModal({ onClose, onSignIn }) {
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
           </div>
           <div>
-            <h2 className="font-bold text-lg text-white leading-none">Management Sign-in</h2>
-            <p className="text-xs text-slate-400 mt-1">Required to sync tender sources.</p>
+            <h2 className="font-bold text-lg text-white leading-none">{title}</h2>
+            <p className="text-xs text-slate-400 mt-1">{subtitle}</p>
           </div>
         </div>
         {error && (
           <p className="mb-4 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-md px-3 py-2">{error}</p>
         )}
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-          Email
-        </label>
+        {notice && (
+          <p className="mb-4 text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-3 py-2">{notice}</p>
+        )}
+
+        {mode === "register" && (
+          <>
+            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Full name</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 mb-4 focus:outline-none focus:border-emerald-500"
+              placeholder="Jane Wanjiru"
+              autoComplete="name"
+            />
+          </>
+        )}
+
+        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Email</label>
         <input
           type="email"
           required
@@ -442,33 +541,72 @@ function SignInModal({ onClose, onSignIn }) {
           placeholder="you@hueri.co.ke"
           autoComplete="username"
         />
+
         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-          Password
+          {mode === "change-password" ? "Current password" : "Password"}
         </label>
         <input
           type="password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 mb-6 focus:outline-none focus:border-emerald-500"
-          autoComplete="current-password"
+          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 mb-4 focus:outline-none focus:border-emerald-500"
+          autoComplete={mode === "change-password" ? "current-password" : mode === "register" ? "new-password" : "current-password"}
         />
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm text-slate-400 hover:text-slate-200 transition"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={busy}
-            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
-          >
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
+
+        {(mode === "register" || mode === "change-password") && (
+          <>
+            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+              {mode === "register" ? "Confirm password" : "New password"}
+            </label>
+            <input
+              type="password"
+              required
+              minLength={mode === "change-password" ? 8 : undefined}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 mb-6 focus:outline-none focus:border-emerald-500"
+              autoComplete="new-password"
+            />
+            {mode === "register" && (
+              <p className="text-[11px] text-slate-500 -mt-4 mb-4">Minimum 8 characters recommended.</p>
+            )}
+          </>
+        )}
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            {mode !== "signin" && (
+              <button type="button" onClick={() => switchMode("signin")} className="text-xs text-slate-400 hover:text-emerald-300 transition">
+                Back to sign in
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={onClose} className="text-sm text-slate-400 hover:text-slate-200 transition">
+              {mode === "change-password" && notice ? "Close" : "Cancel"}
+            </button>
+            <button
+              type="submit"
+              disabled={busy}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
+            >
+              {busy ? "Working…"
+                : mode === "signin" ? "Sign in"
+                : mode === "register" ? "Create account"
+                : "Update password"}
+            </button>
+          </div>
         </div>
+
+        {mode === "signin" && (
+          <p className="mt-4 text-xs text-slate-500 text-center">
+            First time here?{" "}
+            <button type="button" onClick={() => switchMode("register")} className="text-emerald-400 hover:text-emerald-300">
+              Create a management account
+            </button>
+          </p>
+        )}
       </form>
     </div>
   );

@@ -6,6 +6,9 @@ stubbed, and every test runs against a throwaway SQLite database
 """
 
 import pytest
+from fastapi.testclient import TestClient
+
+import main as main_module
 
 
 def register_and_login(client, email="scout@example.com", password="s3cret-pw"):
@@ -98,13 +101,33 @@ class FakeAIResult:
 def stubbed_pipeline(client, monkeypatch):
     import app.services.pipeline as pipeline_module
 
-    monkeypatch.setattr(
-        pipeline_module.ungm_collector, "fetch_recent_notices", lambda: [dict(FAKE_NOTICE)]
-    )
-    monkeypatch.setattr(pipeline_module.ppip_collector, "fetch_recent_notices", lambda: [])
-    monkeypatch.setattr(pipeline_module.worldbank_collector, "fetch_recent_notices", lambda: [])
+    async def fake_ungm():
+        return [dict(FAKE_NOTICE)]
+
+    async def fake_empty():
+        return []
+
+    monkeypatch.setattr(pipeline_module.ungm_collector, "fetch_recent_notices", fake_ungm)
+    monkeypatch.setattr(pipeline_module.ppip_collector, "fetch_recent_notices", fake_empty)
+    monkeypatch.setattr(pipeline_module.worldbank_collector, "fetch_recent_notices_async", fake_empty)
     monkeypatch.setattr(pipeline_module.tender_agent, "analyze_tender", lambda *a, **k: FakeAIResult())
     return client
+
+
+def test_collectors_are_fully_async():
+    """Regression guard: collectors must never go back to blocking requests."""
+    import inspect
+
+    from app.collectors import ungm, ppip, worldbank
+
+    assert inspect.iscoroutinefunction(ungm.ungm_collector.fetch_recent_notices)
+    assert inspect.iscoroutinefunction(ppip.ppip_collector.fetch_recent_notices)
+    assert inspect.iscoroutinefunction(worldbank.worldbank_collector.fetch_recent_notices_async)
+
+    for module in (ungm, ppip, worldbank):
+        assert "import requests" not in inspect.getsource(module), (
+            f"{module.__name__} regressed to blocking 'requests'"
+        )
 
 
 def test_trigger_collect_pipeline(stubbed_pipeline):
@@ -147,3 +170,53 @@ def test_tenders_min_score_filter(stubbed_pipeline):
 
     above = client.get("/api/tenders", params={"min_score": 8.0})
     assert above.json() == []
+
+
+def test_change_password_flow(client):
+    email = "pw-change@example.com"
+    old_password = "s3cret-pw"
+    new_password = "n3w-s3cret-pw-9"
+
+    # register_and_login creates the account and returns auth headers
+    headers = register_and_login(client, email=email, password=old_password)
+
+    # Wrong current password is rejected
+    res = client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": "wrong", "new_password": new_password},
+    )
+    assert res.status_code == 400
+
+    # New password must differ from old
+    res = client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": old_password, "new_password": old_password},
+    )
+    assert res.status_code == 400
+
+    # Enforce minimum length via validation
+    res = client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": old_password, "new_password": "short"},
+    )
+    assert res.status_code == 422
+
+    # Happy path: rotate, then login with the new password
+    res = client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": old_password, "new_password": new_password},
+    )
+    assert res.status_code == 200, res.text
+
+    res = client.post(
+        "/api/auth/login", data={"username": email, "password": new_password}
+    )
+    assert res.status_code == 200, "login with new password must succeed"
+    res = client.post(
+        "/api/auth/login", data={"username": email, "password": old_password}
+    )
+    assert res.status_code == 400, "old password must stop working"

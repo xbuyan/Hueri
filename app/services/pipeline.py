@@ -3,8 +3,9 @@
 Lives in its own module so it can run inside the arq worker process
 (queues) as well as inline (fallback when Redis is unavailable).
 
-All network I/O is non-blocking: collectors run in a thread pool, the
-Gemini call in a separate one, so neither stalls the event loop.
+All network I/O is non-blocking: collectors use httpx.AsyncClient and
+run concurrently on the event loop; the Gemini SDK call (blocking) runs
+in a worker thread via asyncio.to_thread.
 """
 
 import asyncio
@@ -68,15 +69,14 @@ async def run_collection_pipeline(ctx: Dict[str, Any]) -> Dict[str, Any]:
     """
     all_notices: List[Dict[str, Any]] = []
 
-    # Collectors are blocking (requests + BeautifulSoup) - run them in
-    # a thread pool so the event loop stays responsive.
+    # Collectors are fully async (httpx.AsyncClient) - run them concurrently.
     collectors = [
-        ("UNGM", ungm_collector.fetch_recent_notices),
-        ("PPIP", ppip_collector.fetch_recent_notices),
-        ("WB", worldbank_collector.fetch_recent_notices),
+        ("UNGM", ungm_collector.fetch_recent_notices()),
+        ("PPIP", ppip_collector.fetch_recent_notices()),
+        ("WB", worldbank_collector.fetch_recent_notices_async()),
     ]
     results = await asyncio.gather(
-        *(asyncio.to_thread(fn) for _, fn in collectors), return_exceptions=True
+        *(coro for _, coro in collectors), return_exceptions=True
     )
     for (name, _), result in zip(collectors, results):
         if isinstance(result, Exception):

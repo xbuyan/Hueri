@@ -23,6 +23,10 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, description="Minimum 8 characters")
+
 class TenderAIAnalysisResult(BaseModel):
     relevance_score: float = Field(description="Relevance score from 0.0 to 10.0 based on core weights")
     is_fit: bool = Field(description="True if total match score >= 6.5")

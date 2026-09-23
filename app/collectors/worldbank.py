@@ -1,7 +1,9 @@
+import asyncio
 import logging
-import time
 from typing import List, Dict, Any
-import requests
+
+import httpx
+
 from app.config import settings
 
 logger = logging.getLogger("collectors.worldbank")
@@ -13,6 +15,10 @@ class WorldBankCollector:
     API_URL = "https://search.worldbank.org/api/v2/procnotices"
 
     def fetch_recent_notices(self) -> List[Dict[str, Any]]:
+        """Kept as a sync wrapper so legacy callers keep working."""
+        return asyncio.get_event_loop().run_until_complete(self.fetch_recent_notices_async())
+
+    async def fetch_recent_notices_async(self) -> List[Dict[str, Any]]:
         params = {
             "format": "json",
             "rows": "15",
@@ -21,25 +27,26 @@ class WorldBankCollector:
             "order": "desc",
             "countrycode_exact": "KE",
         }
-        
+
         last_exc = None
-        for attempt in range(1, settings.COLLECTOR_MAX_RETRIES + 1):
-            try:
-                res = requests.get(self.API_URL, params=params, timeout=15)
-                res.raise_for_status()
-                data = res.json()
-                return self._parse_json(data)
-            except Exception as exc:
-                last_exc = exc
-                logger.warning("WorldBank attempt %d failed: %s", attempt, exc)
-                time.sleep(2 ** (attempt - 1))
+        async with httpx.AsyncClient(timeout=15) as client:
+            for attempt in range(1, settings.COLLECTOR_MAX_RETRIES + 1):
+                try:
+                    res = await client.get(self.API_URL, params=params)
+                    res.raise_for_status()
+                    data = res.json()
+                    return self._parse_json(data)
+                except Exception as exc:
+                    last_exc = exc
+                    logger.warning("WorldBank attempt %d failed: %s", attempt, exc)
+                    await asyncio.sleep(2 ** (attempt - 1))
 
         raise WorldBankCollectorError(f"WorldBank API collection failed: {last_exc}")
 
     def _parse_json(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
         notices = []
         procnotices = data.get("procnotices", {})
-        
+
         for key, item in procnotices.items():
             if not isinstance(item, dict):
                 continue

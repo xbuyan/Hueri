@@ -51,6 +51,9 @@ docker compose up --build     # api on :8000, postgres on :5432, redis on :6379
 
 The api container runs `alembic upgrade head` before starting uvicorn.
 
+For a full step-by-step production deployment (host setup, Let's Encrypt TLS,
+secrets, backups) see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ### Management account
 
 Collection runs are authenticated, and the dashboard prompts for credentials in a sign-in form (no credentials are stored in source). Create a management account once after starting the API:
