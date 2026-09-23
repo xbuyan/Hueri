@@ -31,7 +31,7 @@ aiosmtplib==5.1.3
 httpx==0.28.1  # SMS gateway HTTP client
 
 # Caching
-redis==8.1.0
+redis==5.2.1  # arq requires redis<6
 
 # Rate limiting
 slowapi==0.1.10
