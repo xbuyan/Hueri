@@ -71,6 +71,16 @@ Then sign in from the dashboard header. The token is kept in `localStorage` and 
 
 Alerts fire during `POST /api/tenders/trigger-collect` for every tender whose AI relevance score is ≥ `ALERT_MIN_SCORE` (default 7.0). Each channel is independent and degrades to a log line when unconfigured (dev/CI never sends real messages).
 
+### Verify SMS delivery
+
+Once the `SMS_*` variables are set (e.g. Africa's Talking — see `.env.example` for the exact `SMS_PAYLOAD_TEMPLATE`), prove the credentials work end-to-end with one command — it sends a real test message:
+
+```bash
+.venv/bin/python scripts/verify_sms.py +2547XXXXXXXX
+```
+
+It reports the gateway's per-recipient result (Africa's Talking `Success` / `InvalidPhoneNumber`), `messageId` and cost, and exits non-zero on any rejection. Note Africa's Talking returns HTTP 201 even for rejected numbers, which the notifier's body validation catches so failures are recorded, not silently counted as sent.
+
 ### Email (any SMTP provider)
 
 Works with Gmail Workspace, Zoho, SES (SMTP interface), Hostinger, etc.

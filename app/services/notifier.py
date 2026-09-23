@@ -219,7 +219,7 @@ class Notifier:
         )
         logger.info("Email alert sent to %s", to)
 
-    async def _send_sms(self, to: str, text: str) -> None:
+    async def _send_sms(self, to: str, text: str) -> Optional[Dict[str, Any]]:
         template = settings.SMS_PAYLOAD_TEMPLATE or '{"to": "{to}", "message": "{message}"}'
         payload_str = template.replace("{to}", to).replace("{message}", text)
         try:
@@ -240,7 +240,37 @@ class Notifier:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(settings.SMS_API_URL, json=payload, headers=headers)
             resp.raise_for_status()
+
+        # Africa's Talking (and gateways with a similar body contract) return
+        # HTTP 2xx even when individual recipients fail — the per-number
+        # result lives in the body. Validate it so a rejected number is
+        # recorded as a failed notification instead of a silent success.
+        try:
+            body = resp.json()
+        except ValueError:
+            body = None
+        recipients = (body or {}).get("SMSMessageData", {}).get("Recipients")
+        if isinstance(recipients, list) and recipients:
+            failures = [
+                str(r.get("status"))
+                for r in recipients
+                if isinstance(r, dict) and str(r.get("status")) != "Success"
+            ]
+            if failures:
+                raise RuntimeError(
+                    f"SMS gateway rejected delivery to {to}: {failures}"
+                )
         logger.info("SMS alert sent to %s", to)
+        return body
+
+    async def send_test_sms(self, to: str, text: str) -> Optional[Dict[str, Any]]:
+        """Deliver one message via the configured gateway (ops verification).
+
+        Bypasses the production gate and dedupe — used by
+        scripts/verify_sms.py to prove credentials end-to-end.
+        Returns the parsed gateway response body when available.
+        """
+        return await self._send_sms(to, text)
 
 
 notifier = Notifier()

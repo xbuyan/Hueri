@@ -120,6 +120,112 @@ def test_invalid_sms_template_is_reported_not_raised():
         settings.SMS_PAYLOAD_TEMPLATE = original_tpl
 
 
+class _FakeResponse:
+    def __init__(self, status_code, body):
+        self.status_code = status_code
+        self._body = body
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._body
+
+
+class _FakeAsyncClient:
+    """Stands in for httpx.AsyncClient in _send_sms tests."""
+
+    last_payload = None
+
+    def __init__(self, response, **kwargs):
+        self._response = response
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, json=None, headers=None):
+        _FakeAsyncClient.last_payload = json
+        return self._response
+
+
+def _patch_httpx(monkeypatch, response):
+    import app.services.notifier as notifier_module
+
+    monkeypatch.setattr(
+        notifier_module.httpx, "AsyncClient", lambda **kw: _FakeAsyncClient(response)
+    )
+    return notifier_module
+
+
+def test_sms_gateway_at_http_201_with_failed_recipient_raises(monkeypatch):
+    """Africa's Talking returns HTTP 201 even when the number is rejected —
+    the per-recipient status in the body must be honoured."""
+    import app.services.notifier as notifier_module
+
+    _patch_httpx(
+        monkeypatch,
+        _FakeResponse(
+            201,
+            {"SMSMessageData": {"Recipients": [
+                {"status": "InvalidPhoneNumber", "phoneNumber": "+254700000001"}
+            ]}},
+        ),
+    )
+
+    original_env = settings.ENVIRONMENT
+    original_url = settings.SMS_API_URL
+    original_tpl = settings.SMS_PAYLOAD_TEMPLATE
+    try:
+        settings.ENVIRONMENT = "production"
+        settings.SMS_API_URL = "https://api.sandbox.africastalking.com/version1/messaging"
+        settings.SMS_PAYLOAD_TEMPLATE = (
+            '{"username":"sandbox","to":["{to}"],"message":"{message}"}'
+        )
+        with pytest.raises(RuntimeError, match="InvalidPhoneNumber"):
+            asyncio.run(
+                notifier_module.notifier._send_sms("+254700000001", "test message")
+            )
+    finally:
+        settings.ENVIRONMENT = original_env
+        settings.SMS_API_URL = original_url
+        settings.SMS_PAYLOAD_TEMPLATE = original_tpl
+
+
+def test_sms_gateway_at_success_returns_body(monkeypatch):
+    import app.services.notifier as notifier_module
+
+    body = {"SMSMessageData": {"Recipients": [
+        {"status": "Success", "phoneNumber": "+254700000001",
+         "messageId": "ATUid_xxx", "cost": "KES 1.00"}
+    ]}}
+    _patch_httpx(monkeypatch, _FakeResponse(201, body))
+
+    original_env = settings.ENVIRONMENT
+    original_url = settings.SMS_API_URL
+    original_tpl = settings.SMS_PAYLOAD_TEMPLATE
+    try:
+        settings.ENVIRONMENT = "production"
+        settings.SMS_API_URL = "https://api.sandbox.africastalking.com/version1/messaging"
+        settings.SMS_PAYLOAD_TEMPLATE = (
+            '{"username":"sandbox","to":["{to}"],"message":"{message}"}'
+        )
+        result = asyncio.run(
+            notifier_module.notifier._send_sms("+254700000001", "test message")
+        )
+        assert result == body
+        # The AT payload template must produce username/to[]/message JSON
+        assert _FakeAsyncClient.last_payload["to"] == ["+254700000001"]
+        assert "test message" in _FakeAsyncClient.last_payload["message"]
+    finally:
+        settings.ENVIRONMENT = original_env
+        settings.SMS_API_URL = original_url
+        settings.SMS_PAYLOAD_TEMPLATE = original_tpl
+
+
 # --- Pipeline integration (full offline stack, collectors + AI stubbed) ---
 
 
