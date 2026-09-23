@@ -253,11 +253,16 @@ class FakeAIResult:
 def alert_pipeline(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
 
     from app import db as app_db
     import main as main_module
 
-    test_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
+    # NullPool: same rationale as in conftest.py — never pool aiosqlite
+    # connections across the TestClient portal loop and per-test loops.
+    test_engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", poolclass=NullPool
+    )
     test_sessionmaker = async_sessionmaker(
         test_engine, expire_on_commit=False, class_=AsyncSession
     )
