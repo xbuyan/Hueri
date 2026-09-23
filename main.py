@@ -27,11 +27,6 @@ from app.services.pipeline import (
     run_collection_pipeline,
 )
 
-# Keep rate limits enforced before this import.
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-
 setup_logging()
 logger = logging.getLogger("main")
 
