@@ -28,9 +28,16 @@ beautifulsoup4==4.12.3
 
 # Alerts
 aiosmtplib==5.1.3
+httpx==0.28.1  # SMS gateway HTTP client
 
 # Caching
 redis==8.1.0
 
 # Rate limiting
 slowapi==0.1.10
+
+# Structured logging
+structlog==26.1.0
+
+# Background tasks + cron (arq uses Redis)
+arq==0.28.0

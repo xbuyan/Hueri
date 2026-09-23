@@ -7,6 +7,7 @@ Automated procurement tender scouting for **HUERI Limited** (Nairobi-based ESIA 
 - **Multi-source collection** — UNGM, PPIP (Kenya), World Bank STEP scrapers/APIs with retry + backoff
 - **AI evaluation** — Gemini 2.5 Flash scores every tender (service match 40%, geography 20%, regulatory 20%, scale 20%) and returns a structured analysis
 - **Management alerts** — email (SMTP) + SMS (generic JSON gateway) notifications for tenders above the score threshold, with dedupe and a `notifications` audit trail
+- **Queue + cron** — collection runs on an arq worker (Redis) with a built-in scheduler; inline fallback without Redis
 - **JWT auth** — register/login, protected collection trigger, `/api/auth/me`
 - **Dashboard** — React + Vite + Tailwind frontend
 - **Ops-ready** — Alembic migrations, JSON structured logging, Redis caching, rate limiting, security headers, Docker/Compose, CI with pytest
@@ -50,6 +51,18 @@ docker compose up --build     # api on :8000, postgres on :5432, redis on :6379
 
 The api container runs `alembic upgrade head` before starting uvicorn.
 
+### Bootstrap management account
+
+Collection runs are authenticated, and the dashboard signs in automatically against a bootstrap management account. Create it once after starting the API:
+
+```bash
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "management@hueri.co.ke", "password": "changeme", "full_name": "HUERI Management"}'
+```
+
+The dashboard's sign-in helper (`frontend/src/components/Dashboard.jsx`) defaults to those credentials — for anything beyond local testing, register a strong password and update the helper accordingly.
+
 ## Configuring alerts
 
 Alerts fire during `POST /api/tenders/trigger-collect` for every tender whose AI relevance score is ≥ `ALERT_MIN_SCORE` (default 7.0). Each channel is independent and degrades to a log line when unconfigured (dev/CI never sends real messages).
@@ -92,6 +105,21 @@ SMS_HEADERS={"Authorization":"Bearer TELNYX_KEY","Content-Type":"application/jso
 
 Every alert is recorded in the `notifications` table (`channel`, `recipient`, `status`, `created_at`) for auditing. Duplicate alerts for the same tender/recipients are skipped within a run.
 
+## Background worker & scheduler
+
+When `REDIS_URL` is set (compose does this), `POST /api/tenders/trigger-collect` **queues** the run on an [arq](https://arq-docs.helpmanual.io/) worker and returns `{"status": "queued"}` immediately — the API never blocks on collectors or Gemini. The dashboard polls `GET /api/tenders/collect-status` (idle/queued/running/complete/failed) until the run finishes.
+
+Without Redis, the same endpoint runs the pipeline **inline** (dev/CI behaviour), so nothing breaks in minimal setups.
+
+**The scheduler**: the worker also runs a cron job that executes the full pipeline every `COLLECT_CRON_MINUTES` (default `0,30` — twice an hour, UTC), so tenders and alerts flow without anyone pressing a button.
+
+```bash
+# run the worker locally (needs REDIS_URL)
+arq app.worker.WorkerSettings
+```
+
+Compose starts the worker as its own service (`tenderscout_worker`), running `alembic upgrade head` first. Alerts fire from whichever process runs the pipeline — worker (queued/cron) or API (inline).
+
 ## Database migrations
 
 ```bash
@@ -127,10 +155,9 @@ database URL + pool sizing, CORS origins, Gemini key, SMTP and SMS gateway setti
 
 ## Roadmap
 
-- **Background workers** — move collection + AI evaluation + alerting into a Celery/RQ worker queue so `trigger-collect` returns immediately (Redis is already in the stack)
-- **Scheduled collection** — cron/worker-triggered runs instead of on-demand sync
 - **Deadline reminders** — SMS/email nudges as tender deadlines approach
 - **Company profile UI** — manage `HUERI_PROFILE` and alert thresholds from the dashboard
+- **Per-user alert preferences** — notification settings beyond the global management recipients
 
 ## CI
 

@@ -1,8 +1,11 @@
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
 import redis.asyncio as aioredis
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,14 +19,18 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.core.logging import setup_logging
 from app.db import engine, get_db, init_db
-from app.models import Tender, TenderAnalysis, User, TenderStatus, Notification
+from app.models import Tender, TenderAnalysis, User
 from app.schemas import UserCreate, UserOut, Token, TenderOut
 from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
-from app.collectors.ungm import ungm_collector
-from app.collectors.ppip import ppip_collector
-from app.collectors.worldbank import worldbank_collector
-from app.services.ai_agent import tender_agent
-from app.services.notifier import notifier
+from app.services.pipeline import (
+    STATUS_QUEUED,
+    run_collection_pipeline,
+)
+
+# Keep rate limits enforced before this import.
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 setup_logging()
 logger = logging.getLogger("main")
@@ -50,23 +57,36 @@ async def _get_redis() -> Optional[aioredis.Redis]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # arq job-enqueue pool (None when Redis is not configured)
+    global _arq_pool
+    if settings.REDIS_URL:
+        try:
+            _arq_pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+            logger.info("arq pool created; collection runs will be queued")
+        except Exception as e:
+            logger.warning("arq pool unavailable (%s); pipeline will run inline", e)
+            _arq_pool = None
     logger.info(
         "Startup complete",
         extra={
             "environment": settings.ENVIRONMENT,
             "alerts_enabled": settings.ALERTS_ENABLED,
             "redis_enabled": bool(settings.REDIS_URL),
+            "queue_enabled": _arq_pool is not None,
             "smtp_configured": bool(settings.SMTP_HOST),
             "sms_configured": bool(settings.SMS_API_URL),
         },
     )
     yield
+    if _arq_pool is not None:
+        await _arq_pool.aclose()
     await engine.dispose()
     if _redis is not None:
         await _redis.aclose()
 
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
+_arq_pool = None
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -110,37 +130,6 @@ class SecurityHeadersMiddleware:
 
 
 app.add_middleware(SecurityHeadersMiddleware)
-
-HUERI_PROFILE = {
-    "company_name": "HUERI Limited",
-    "description": "Environmental, social, and sustainability engineering consultancy based in Nairobi, Kenya.",
-    "core_services": ["Environmental Impact Assessment (EIA)", "ESIA", "Environmental Audits", "Resettlement Action Plans (RAP)", "M&E"],
-    "target_geographies": ["Kenya", "Uganda", "Tanzania", "East Africa"]
-}
-
-
-def _tender_alert_dict(notice: dict, tender: Tender, ai_eval) -> dict:
-    """Plain-dict snapshot for the notifier.
-
-    The notifier must never touch ORM relationship attributes
-    (e.g. tender.analysis): lazy-loading them outside the async session
-    context raises MissingGreenlet. Column values on `tender` are already
-    loaded, so they are safe.
-    """
-    return {
-        "id": tender.id,
-        "external_id": tender.external_id,
-        "source": tender.source,
-        "title": tender.title,
-        "buyer": tender.buyer,
-        "url": tender.url,
-        "deadline_str": tender.deadline_str,
-        "analysis": {
-            "relevance_score": ai_eval.relevance_score,
-            "executive_summary": ai_eval.executive_summary,
-            "eligibility_gaps": ai_eval.eligibility_gaps,
-        },
-    }
 
 # --- AUTH ROUTES ---
 
@@ -205,92 +194,57 @@ async def get_tenders(
     return res.scalars().all()
 
 
-@app.post("/api/tenders/trigger-collect", response_model=List[TenderOut])
+@app.post("/api/tenders/trigger-collect")
 @limiter.limit(settings.RATE_LIMIT_EXPENSIVE)
 async def trigger_collection_pipeline(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Run all collectors, analyze new notices, and alert management
-    about high-fit tenders. Requires authentication."""
-    all_notices = []
+    """Trigger a collection run: collectors, AI analysis, and management
+    alerts for high-fit tenders. Requires authentication.
 
-    for collector in [ungm_collector, ppip_collector, worldbank_collector]:
+    With Redis configured the run is queued on the arq worker and this
+    returns {"status": "queued"} immediately; poll /api/tenders/collect-status
+    for progress. Without Redis the pipeline runs inline (dev/CI behaviour).
+    """
+    if _arq_pool is not None:
         try:
-            all_notices.extend(collector.fetch_recent_notices())
+            from app.worker import JOB_ID  # local import: keeps worker optional
+
+            await _arq_pool.enqueue_job("run_collection_job", _job_id=JOB_ID)
+            return {"status": STATUS_QUEUED, "job_id": JOB_ID}
         except Exception as e:
-            logger.error("Collector failed: %s", e)
+            logger.warning("Could not enqueue collection job (%s); running inline", e)
 
-    high_fit_tenders: List[dict] = []
-
-    for notice in all_notices:
-        stmt = select(Tender).where(Tender.external_id == notice["external_id"])
-        res = await db.execute(stmt)
-        if not res.scalar_one_or_none():
-            tender = Tender(**notice, is_mock=False)
-            db.add(tender)
-            await db.flush()
-
-            try:
-                ai_eval = tender_agent.analyze_tender(
-                    tender.title, tender.buyer or "", tender.raw_summary or "", HUERI_PROFILE
-                )
-                analysis = TenderAnalysis(
-                    tender_id=tender.id,
-                    relevance_score=ai_eval.relevance_score,
-                    is_fit=ai_eval.is_fit,
-                    executive_summary=ai_eval.executive_summary,
-                    matched_services=ai_eval.matched_services,
-                    eligibility_gaps=ai_eval.eligibility_gaps,
-                    suggested_next_steps=ai_eval.suggested_next_steps,
-                    status=TenderStatus.NEW
-                )
-                db.add(analysis)
-                if ai_eval.relevance_score >= settings.ALERT_MIN_SCORE:
-                    high_fit_tenders.append(_tender_alert_dict(notice, tender, ai_eval))
-            except Exception as eval_err:
-                logger.error("AI analysis failed for tender %s: %s", tender.external_id, eval_err)
-
-    await db.commit()
-
-    # --- Management alerts (email + SMS) ---
-    if settings.ALERTS_ENABLED and high_fit_tenders:
-        try:
-            alert_summary = await notifier.send_tender_alert(high_fit_tenders)
-            logger.info("Alert run summary: %s", alert_summary)
-
-            email_status = (
-                "sent" if alert_summary["emails_sent"]
-                else "logged" if alert_summary["emails_logged"]
-                else "skipped"
-            )
-            sms_status = (
-                "sent" if alert_summary["sms_sent"]
-                else "logged" if alert_summary["sms_logged"]
-                else "skipped"
-            )
-            for t in high_fit_tenders:
-                if email_status != "skipped":
-                    db.add(Notification(
-                        tender_id=t["id"], channel="email",
-                        recipient=", ".join(settings.alert_email_recipients_list()) or "management",
-                        status=email_status,
-                    ))
-                if sms_status != "skipped":
-                    db.add(Notification(
-                        tender_id=t["id"], channel="sms",
-                        recipient=", ".join(settings.alert_sms_recipients_list()) or "management",
-                        status=sms_status,
-                    ))
-            await db.commit()
-        except Exception:
-            logger.exception("Alerting failed for %d tenders", len(high_fit_tenders))
+    summary = await run_collection_pipeline({})
+    logger.info("Inline pipeline run: %s", summary)
 
     res_all = await db.execute(
         select(Tender).options(selectinload(Tender.analysis)).order_by(Tender.id.desc())
     )
     return res_all.scalars().all()
+
+
+@app.get("/api/tenders/collect-status")
+async def collection_job_status(current_user: User = Depends(get_current_user)):
+    """Report the state of the queued collection run.
+
+    One of: idle | queued | running | complete | failed | inline (no queue).
+    """
+    if _arq_pool is None:
+        return {"status": "inline"}
+    try:
+        from app.worker import JOB_STATUS_KEY  # local import: keeps worker optional
+
+        redis = await _get_redis()
+        if redis is None:
+            return {"status": "unknown"}
+        raw = await redis.get(JOB_STATUS_KEY)
+        return json.loads(raw) if raw else {"status": "idle"}
+    except Exception as e:
+        logger.warning("Could not read collection job status: %s", e)
+        return {"status": "unknown"}
 
 
 # --- ANALYTICS ROUTES ---
@@ -306,7 +260,6 @@ async def get_analytics_summary(db: AsyncSession = Depends(get_db)):
         if redis is not None:
             cached = await redis.get(cache_key)
             if cached:
-                import json
                 return json.loads(cached)
     except Exception as e:
         logger.warning("Redis cache unavailable, computing fresh: %s", e)
@@ -328,7 +281,6 @@ async def get_analytics_summary(db: AsyncSession = Depends(get_db)):
     try:
         redis = await _get_redis()
         if redis is not None:
-            import json
             await redis.setex(cache_key, settings.ANALYTICS_CACHE_TTL_SECONDS, json.dumps(summary))
     except Exception as e:
         logger.warning("Redis cache write failed: %s", e)

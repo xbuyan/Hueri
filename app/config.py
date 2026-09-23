@@ -61,10 +61,14 @@ class Settings(BaseSettings):
     # Send alerts inline with the collection pipeline (False = log a TODO for the worker queue)
     ALERTS_ENABLED: bool = True
 
-    # --- Redis (caching) ---
-    # Empty string disables caching entirely (default for local dev / CI).
+    # --- Redis (caching + background jobs) ---
+    # Empty string disables caching AND queueing (dev/CI run the pipeline
+    # inline instead of via the arq worker).
     REDIS_URL: Optional[str] = None
     ANALYTICS_CACHE_TTL_SECONDS: int = 60
+
+    # Cron: minutes past the hour for automatic collection runs (UTC)
+    COLLECT_CRON_MINUTES: str = "0,30"
 
     # --- Rate limiting ---
     RATE_LIMIT_ENABLED: bool = True

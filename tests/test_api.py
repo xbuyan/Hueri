@@ -1,38 +1,11 @@
 """Offline smoke tests for the TenderScout API.
 
 No network access happens here: collectors and the Gemini agent are
-stubbed, and every test runs against a throwaway SQLite database.
+stubbed, and every test runs against a throwaway SQLite database
+(the shared `client` fixture lives in conftest.py).
 """
 
-import asyncio
-
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from app import db as app_db
-from app.db import get_db
-from main import app
-
-
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    """TestClient backed by a per-test SQLite database.
-
-    Patches app.db.engine/async_session so both the startup hook
-    (init_db) and the get_db dependency hit the test database.
-    """
-    test_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
-    test_sessionmaker = async_sessionmaker(
-        test_engine, expire_on_commit=False, class_=AsyncSession
-    )
-    monkeypatch.setattr(app_db, "engine", test_engine)
-    monkeypatch.setattr(app_db, "async_session", test_sessionmaker)
-
-    with TestClient(app) as c:
-        yield c
-
-    asyncio.run(test_engine.dispose())
 
 
 def register_and_login(client, email="scout@example.com", password="s3cret-pw"):
@@ -123,14 +96,14 @@ class FakeAIResult:
 
 @pytest.fixture()
 def stubbed_pipeline(client, monkeypatch):
-    import main as main_module
+    import app.services.pipeline as pipeline_module
 
     monkeypatch.setattr(
-        main_module.ungm_collector, "fetch_recent_notices", lambda: [dict(FAKE_NOTICE)]
+        pipeline_module.ungm_collector, "fetch_recent_notices", lambda: [dict(FAKE_NOTICE)]
     )
-    monkeypatch.setattr(main_module.ppip_collector, "fetch_recent_notices", lambda: [])
-    monkeypatch.setattr(main_module.worldbank_collector, "fetch_recent_notices", lambda: [])
-    monkeypatch.setattr(main_module.tender_agent, "analyze_tender", lambda *a, **k: FakeAIResult())
+    monkeypatch.setattr(pipeline_module.ppip_collector, "fetch_recent_notices", lambda: [])
+    monkeypatch.setattr(pipeline_module.worldbank_collector, "fetch_recent_notices", lambda: [])
+    monkeypatch.setattr(pipeline_module.tender_agent, "analyze_tender", lambda *a, **k: FakeAIResult())
     return client
 
 

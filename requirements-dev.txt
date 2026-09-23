@@ -1,5 +1,7 @@
 # Development / test dependencies
 -r requirements.txt
+# (httpx comes from requirements.txt — used by the SMS gateway at runtime
+#  and by the FastAPI TestClient in tests)
 
-httpx==0.28.1          # FastAPI TestClient backend
 pytest==9.0.3
+pytest-asyncio==1.3.0  # @pytest.mark.asyncio for worker tests

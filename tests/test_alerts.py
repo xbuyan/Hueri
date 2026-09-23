@@ -158,12 +158,14 @@ def alert_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(app_db, "engine", test_engine)
     monkeypatch.setattr(app_db, "async_session", test_sessionmaker)
 
+    import app.services.pipeline as pipeline_module
+
     monkeypatch.setattr(
-        main_module.ungm_collector, "fetch_recent_notices", lambda: [dict(FAKE_NOTICE)]
+        pipeline_module.ungm_collector, "fetch_recent_notices", lambda: [dict(FAKE_NOTICE)]
     )
-    monkeypatch.setattr(main_module.ppip_collector, "fetch_recent_notices", lambda: [])
-    monkeypatch.setattr(main_module.worldbank_collector, "fetch_recent_notices", lambda: [])
-    monkeypatch.setattr(main_module.tender_agent, "analyze_tender", lambda *a, **k: FakeAIResult())
+    monkeypatch.setattr(pipeline_module.ppip_collector, "fetch_recent_notices", lambda: [])
+    monkeypatch.setattr(pipeline_module.worldbank_collector, "fetch_recent_notices", lambda: [])
+    monkeypatch.setattr(pipeline_module.tender_agent, "analyze_tender", lambda *a, **k: FakeAIResult())
 
     # Configure alert recipients for the pipeline run
     monkeypatch.setattr(settings, "ALERT_EMAIL_RECIPIENTS", "mgr@hueri.co.ke")

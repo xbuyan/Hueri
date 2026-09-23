@@ -25,6 +25,8 @@ export default function TenderScoutDashboard() {
   const [error, setError] = useState(null);
   const [selectedTender, setSelectedTender] = useState(null);
   const [filterScore, setFilterScore] = useState(0);
+  const [token, setToken] = useState(() => localStorage.getItem("ts_token") || "");
+  const [jobStatus, setJobStatus] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -65,19 +67,75 @@ export default function TenderScoutDashboard() {
     }
   };
 
+  const authHeaders = () => (token ? { Authorization: `Bearer ${token}` } : {});
+
+  // Management sign-in. Uses the bootstrap account (see README); once the
+  // token is stored in localStorage it is reused silently.
+  const ensureSignedIn = async () => {
+    if (token) return token;
+    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        username: "management@hueri.co.ke",
+        password: "changeme",
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(
+        "Sign-in failed: bootstrap management account missing. Create it via POST /api/auth/register."
+      );
+    }
+    const data = await res.json();
+    localStorage.setItem("ts_token", data.access_token);
+    setToken(data.access_token);
+    return data.access_token;
+  };
+
   const triggerCollection = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/tenders/trigger-collect`, { method: "POST" });
+      const bearer = await ensureSignedIn();
+      const res = await fetch(`${API_BASE_URL}/api/tenders/trigger-collect`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${bearer}` },
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `POST /api/tenders/trigger-collect failed: ${res.status}`);
       }
+
+      const body = await res.json().catch(() => null);
+
+      if (body && body.status === "queued") {
+        // Worker mode: poll the job status endpoint until the run finishes.
+        setJobStatus("queued");
+        const deadline = Date.now() + 5 * 60 * 1000;
+        let failed = false;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const sRes = await fetch(`${API_BASE_URL}/api/tenders/collect-status`, {
+            headers: { Authorization: `Bearer ${bearer}` },
+          });
+          if (sRes.ok) {
+            const s = await sRes.json();
+            setJobStatus(s.status);
+            if (s.status === "complete" || s.status === "failed" || s.status === "idle") {
+              failed = s.status === "failed";
+              break;
+            }
+          }
+        }
+        setJobStatus(null);
+        if (failed) throw new Error("Collection run failed on the worker.");
+      }
+
       await fetchData();
     } catch (err) {
       console.error(err);
       setError(err.message || "Collection run failed.");
+      setJobStatus(null);
       setLoading(false);
     }
   };
@@ -110,7 +168,7 @@ export default function TenderScoutDashboard() {
             className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm px-4 py-2 rounded-lg border border-slate-700 transition"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            Sync Sources
+            {jobStatus === "queued" || jobStatus === "running" ? "Syncing…" : "Sync Sources"}
           </button>
           <div className="h-6 w-px bg-slate-800" />
           <div className="flex items-center gap-2">

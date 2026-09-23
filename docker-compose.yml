@@ -52,5 +52,29 @@ services:
       redis:
         condition: service_started
 
+  worker:
+    build: .
+    container_name: tenderscout_worker
+    # Background queue + cron scheduler for collection runs.
+    command: sh -c "alembic upgrade head && arq app.worker.WorkerSettings"
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@db:5432/tenderscout
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-super-secret-key}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      COLLECT_CRON_MINUTES: ${COLLECT_CRON_MINUTES:-0,30}
+      ALERT_EMAIL_RECIPIENTS: ${ALERT_EMAIL_RECIPIENTS:-}
+      ALERT_SMS_RECIPIENTS: ${ALERT_SMS_RECIPIENTS:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMS_API_URL: ${SMS_API_URL:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
 volumes:
   postgres_data:
