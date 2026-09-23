@@ -8,7 +8,8 @@ Automated procurement tender scouting for **HUERI Limited** (Nairobi-based ESIA 
 - **AI evaluation** — Gemini 2.5 Flash scores every tender (service match 40%, geography 20%, regulatory 20%, scale 20%) and returns a structured analysis
 - **Management alerts** — email (SMTP) + SMS (generic JSON gateway) notifications for tenders above the score threshold, with dedupe and a `notifications` audit trail
 - **Queue + cron** — collection runs on an arq worker (Redis) with a built-in scheduler; inline fallback without Redis
-- **JWT auth** — register/login, protected collection trigger, `/api/auth/me`
+- **JWT auth** — register/login, protected collection trigger, `/api/auth/me`, `/api/auth/change-password`
+- **Tender pipeline workflow** — `PATCH /api/tenders/{id}/status` moves tenders through NEW → UNDER_REVIEW → BIDDING / DISCARDED (dashboard pipeline buttons)
 - **Dashboard** — React + Vite + Tailwind frontend
 - **Ops-ready** — Alembic migrations, JSON structured logging, Redis caching, rate limiting, security headers, Docker/Compose, CI with pytest
 

@@ -20,7 +20,7 @@ from app.config import settings
 from app.core.logging import setup_logging
 from app.db import engine, get_db, init_db
 from app.models import Tender, TenderAnalysis, User
-from app.schemas import UserCreate, UserOut, Token, TenderOut, PasswordChange
+from app.schemas import UserCreate, UserOut, Token, TenderOut, PasswordChange, StatusUpdatePayload
 from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
 from app.services.pipeline import (
     STATUS_QUEUED,
@@ -208,6 +208,38 @@ async def get_tenders(
     )
     res = await db.execute(stmt)
     return res.scalars().all()
+
+
+@app.patch("/api/tenders/{tender_id}/status", response_model=TenderOut)
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def update_tender_status(
+    request: Request,
+    tender_id: int,
+    payload: StatusUpdatePayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a tender through the bid pipeline (auth required).
+
+    Accepts any TenderStatus value: NEW, UNDER_REVIEW, BIDDING, DISCARDED.
+    """
+    res = await db.execute(
+        select(Tender)
+        .options(selectinload(Tender.analysis))
+        .where(Tender.id == tender_id)
+    )
+    tender = res.scalar_one_or_none()
+    if tender is None:
+        raise HTTPException(status_code=404, detail="Tender not found")
+    if tender.analysis is None:
+        raise HTTPException(status_code=409, detail="Tender has no analysis yet; cannot set a status")
+
+    tender.analysis.status = payload.status
+    db.add(tender.analysis)
+    await db.commit()
+
+    await db.refresh(tender)
+    return tender
 
 
 @app.post("/api/tenders/trigger-collect")

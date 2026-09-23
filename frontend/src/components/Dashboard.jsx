@@ -29,6 +29,7 @@ export default function TenderScoutDashboard() {
   const [jobStatus, setJobStatus] = useState(null);
   const [showSignIn, setShowSignIn] = useState(false);
   const [authMode, setAuthMode] = useState("signin");
+  const [statusBusy, setStatusBusy] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -129,6 +130,31 @@ export default function TenderScoutDashboard() {
       throw new Error(detail || "Password change failed.");
     }
     return true;
+  };
+
+  const updateTenderStatus = async (tenderId, statusValue) => {
+    setError(null);
+    setStatusBusy(true);
+    try {
+      const bearer = await ensureSignedIn();
+      const res = await fetch(`${API_BASE_URL}/api/tenders/${tenderId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
+        body: JSON.stringify({ status: statusValue }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail = Array.isArray(body.detail) ? body.detail[0]?.msg : body.detail;
+        throw new Error(detail || `Status update failed: ${res.status}`);
+      }
+      const updated = await res.json();
+      setTenders((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      setSelectedTender(updated);
+    } catch (err) {
+      setError(err.message || "Status update failed.");
+    } finally {
+      setStatusBusy(false);
+    }
   };
 
   const triggerCollection = async () => {
@@ -404,10 +430,34 @@ export default function TenderScoutDashboard() {
 
                 <div className="pt-5 flex items-center justify-between">
                   <span className="text-xs text-slate-400">Deadline: <strong className="text-slate-200">{selectedTender.deadline_str}</strong></span>
-                  <div className="flex gap-3">
-                    <button className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition shadow-lg shadow-emerald-950">
-                      Mark as Bidding Pipeline
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 uppercase tracking-wider">Pipeline:</span>
+                    {[
+                      ["NEW", "New"],
+                      ["UNDER_REVIEW", "Reviewing"],
+                      ["BIDDING", "Bidding"],
+                      ["DISCARDED", "Discard"],
+                    ].map(([value, label]) => {
+                      const current = selectedTender.analysis?.status;
+                      const active = current === value;
+                      return (
+                        <button
+                          key={value}
+                          onClick={() => updateTenderStatus(selectedTender.id, value)}
+                          disabled={statusBusy || active || !token}
+                          title={!token ? "Sign in to manage the pipeline" : undefined}
+                          className={`px-2.5 py-1.5 text-xs rounded-md border transition ${
+                            active
+                              ? value === "DISCARDED"
+                                ? "bg-rose-500/20 text-rose-300 border-rose-500/50"
+                                : "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                              : "bg-slate-800/60 text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-500 disabled:opacity-40"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

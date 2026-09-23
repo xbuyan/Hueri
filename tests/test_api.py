@@ -220,3 +220,65 @@ def test_change_password_flow(client):
         "/api/auth/login", data={"username": email, "password": old_password}
     )
     assert res.status_code == 400, "old password must stop working"
+
+
+def test_update_tender_status_workflow(stubbed_pipeline):
+    """PATCH /api/tenders/{id}/status moves a tender through the pipeline."""
+    client = stubbed_pipeline
+    headers = register_and_login(client)
+    client.post("/api/tenders/trigger-collect", headers=headers)
+
+    res = client.get("/api/tenders")
+    tender_id = res.json()[0]["id"]
+
+    # Happy path: mark as bidding
+    res = client.patch(
+        f"/api/tenders/{tender_id}/status",
+        headers=headers,
+        json={"status": "BIDDING"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["analysis"]["status"] == "BIDDING"
+
+    # Other transitions work too
+    for status_value in ("UNDER_REVIEW", "DISCARDED", "NEW"):
+        res = client.patch(
+            f"/api/tenders/{tender_id}/status",
+            headers=headers,
+            json={"status": status_value},
+        )
+        assert res.status_code == 200
+        assert res.json()["analysis"]["status"] == status_value
+
+
+def test_update_tender_status_requires_auth(stubbed_pipeline):
+    client = stubbed_pipeline
+    headers = register_and_login(client)
+    client.post("/api/tenders/trigger-collect", headers=headers)
+    tender_id = client.get("/api/tenders").json()[0]["id"]
+
+    res = client.patch(
+        f"/api/tenders/{tender_id}/status", json={"status": "BIDDING"}
+    )
+    assert res.status_code in (401, 403)
+
+
+def test_update_tender_status_404_and_validation(stubbed_pipeline):
+    client = stubbed_pipeline
+    headers = register_and_login(client)
+
+    # Nonexistent tender
+    res = client.patch(
+        "/api/tenders/99999/status",
+        headers=headers,
+        json={"status": "BIDDING"},
+    )
+    assert res.status_code == 404
+
+    # Invalid enum value -> 422 from Pydantic
+    res = client.patch(
+        "/api/tenders/1/status",
+        headers=headers,
+        json={"status": "NOT_A_STATUS"},
+    )
+    assert res.status_code == 422
