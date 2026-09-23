@@ -101,6 +101,15 @@ Lock it down: `chmod 600 .env.production`.
 
 ## 5. Start the stack
 
+> **Note:** compose interpolates the whole file for *every* command — so
+> `build`, `ps`, `logs` etc. also fail with "required variable SECRET_KEY"
+> until `.env.production` exists. Define a shell alias once and use it
+> everywhere below:
+>
+> ```bash
+> alias dcp='docker compose -f docker-compose.prod.yml --env-file .env.production'
+> ```
+
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 docker compose -f docker-compose.prod.yml ps   # all five services healthy
@@ -209,6 +218,8 @@ docker compose -f docker-compose.prod.yml exec redis redis-cli
 
 | Symptom | Fix |
 |---|---|
+| `docker build` crawls at `Get:1 http://deb.debian.org ...` | Network/proxy throttling Debian mirrors — not a stack problem. Retry (layer cache resumes), or point apt at a local/regional mirror in the Dockerfile |
+| `required variable SECRET_KEY is missing a value` on *any* compose command | Create `.env.production` first (section 4) and pass `--env-file` (see the alias note in section 5) |
 | `nginx` fails to start: no cert files | Section 3 not done, or domain mismatch between cert path and `nginx.conf` |
 | Alerts not arriving | Check `SMTP_*`/`SMS_*` in `.env.production`; worker logs show `logged` (fallback) vs `sent`; empty config = log-only by design |
 | `429 Too Many Requests` | slowapi limits: 10/min auth, 2/min collection — expected |
