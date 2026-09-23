@@ -51,17 +51,17 @@ docker compose up --build     # api on :8000, postgres on :5432, redis on :6379
 
 The api container runs `alembic upgrade head` before starting uvicorn.
 
-### Bootstrap management account
+### Management account
 
-Collection runs are authenticated, and the dashboard signs in automatically against a bootstrap management account. Create it once after starting the API:
+Collection runs are authenticated, and the dashboard prompts for credentials in a sign-in form (no credentials are stored in source). Create a management account once after starting the API:
 
 ```bash
 curl -X POST http://localhost:8000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email": "management@hueri.co.ke", "password": "changeme", "full_name": "HUERI Management"}'
+  -d '{"email": "you@hueri.co.ke", "password": "<strong password>", "full_name": "HUERI Management"}'
 ```
 
-The dashboard's sign-in helper (`frontend/src/components/Dashboard.jsx`) defaults to those credentials — for anything beyond local testing, register a strong password and update the helper accordingly.
+Then sign in from the dashboard header. The token is kept in `localStorage` and reused silently until you sign out.
 
 ## Configuring alerts
 

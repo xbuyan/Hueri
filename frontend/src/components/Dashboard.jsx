@@ -27,6 +27,7 @@ export default function TenderScoutDashboard() {
   const [filterScore, setFilterScore] = useState(0);
   const [token, setToken] = useState(() => localStorage.getItem("ts_token") || "");
   const [jobStatus, setJobStatus] = useState(null);
+  const [showSignIn, setShowSignIn] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -69,27 +70,34 @@ export default function TenderScoutDashboard() {
 
   const authHeaders = () => (token ? { Authorization: `Bearer ${token}` } : {});
 
-  // Management sign-in. Uses the bootstrap account (see README); once the
-  // token is stored in localStorage it is reused silently.
+  // Management sign-in. Users enter their own credentials in the sign-in
+  // form (no credentials are ever stored in source); once the token is
+  // stored in localStorage it is reused silently.
   const ensureSignedIn = async () => {
     if (token) return token;
+    setShowSignIn(true);
+    throw new Error("Please sign in to sync tender sources.");
+  };
+
+  const signIn = async (username, password) => {
     const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        username: "management@hueri.co.ke",
-        password: "changeme",
-      }),
+      body: new URLSearchParams({ username, password }),
     });
     if (!res.ok) {
-      throw new Error(
-        "Sign-in failed: bootstrap management account missing. Create it via POST /api/auth/register."
-      );
+      throw new Error("Sign-in failed — check your email and password.");
     }
     const data = await res.json();
     localStorage.setItem("ts_token", data.access_token);
     setToken(data.access_token);
+    setShowSignIn(false);
     return data.access_token;
+  };
+
+  const signOut = () => {
+    localStorage.removeItem("ts_token");
+    setToken("");
   };
 
   const triggerCollection = async () => {
@@ -171,12 +179,28 @@ export default function TenderScoutDashboard() {
             {jobStatus === "queued" || jobStatus === "running" ? "Syncing…" : "Sync Sources"}
           </button>
           <div className="h-6 w-px bg-slate-800" />
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-xs text-white">
-              HU
+          {token ? (
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-xs text-white">
+                HU
+              </div>
+              <span className="text-sm font-medium text-slate-300">HUERI Advisory</span>
+              <button
+                onClick={signOut}
+                className="text-xs text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 rounded-md px-2 py-1 transition"
+              >
+                Sign out
+              </button>
             </div>
-            <span className="text-sm font-medium text-slate-300">HUERI Advisory</span>
-          </div>
+          ) : (
+            <button
+              onClick={() => setShowSignIn(true)}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-4 py-2 rounded-lg transition"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Sign in
+            </button>
+          )}
         </div>
       </header>
 
@@ -358,6 +382,94 @@ export default function TenderScoutDashboard() {
           </div>
         </div>
       </main>
+
+      {showSignIn && (
+        <SignInModal
+          onClose={() => setShowSignIn(false)}
+          onSignIn={signIn}
+        />
+      )}
+    </div>
+  );
+}
+
+function SignInModal({ onClose, onSignIn }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await onSignIn(username, password);
+    } catch (err) {
+      setError(err.message || "Sign-in failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl"
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div className="bg-emerald-500/20 p-2 rounded-xl border border-emerald-500/30">
+            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div>
+            <h2 className="font-bold text-lg text-white leading-none">Management Sign-in</h2>
+            <p className="text-xs text-slate-400 mt-1">Required to sync tender sources.</p>
+          </div>
+        </div>
+        {error && (
+          <p className="mb-4 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-md px-3 py-2">{error}</p>
+        )}
+        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+          Email
+        </label>
+        <input
+          type="email"
+          required
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 mb-4 focus:outline-none focus:border-emerald-500"
+          placeholder="you@hueri.co.ke"
+          autoComplete="username"
+        />
+        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+          Password
+        </label>
+        <input
+          type="password"
+          required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 mb-6 focus:outline-none focus:border-emerald-500"
+          autoComplete="current-password"
+        />
+        <div className="flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-slate-400 hover:text-slate-200 transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
+          >
+            {busy ? "Signing in…" : "Sign in"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
