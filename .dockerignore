@@ -1,0 +1,29 @@
+# Environments & caches
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Git / CI
+.git/
+.github/
+
+# Local artifacts — never baked into the image
+*.db
+*.sqlite3
+.env
+archive/
+discovered/
+collector.log
+*.zip
+ungm_page.html
+
+# Frontend (built separately by nginx image in prod)
+frontend/node_modules/
+frontend/dist/
+
+# Docs
+README.md

@@ -15,4 +15,10 @@ venv/
 # Dependencies
 node_modules/
 frontend/node_modules/
-.venv/
+
+# WIP artifacts
+archive/
+discovered/
+collector.log
+*.zip
+ungm_page.html

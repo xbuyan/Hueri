@@ -65,3 +65,18 @@ class TenderAnalysis(Base):
     evaluated_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     tender = relationship("Tender", back_populates="analysis")
+
+class Notification(Base):
+    """Audit trail of alerts sent to management about a tender."""
+
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tender_id = Column(Integer, ForeignKey("tenders.id"), nullable=False, index=True)
+    channel = Column(String(20), nullable=False)  # "email" | "sms"
+    recipient = Column(String(255), nullable=False)
+    status = Column(String(20), nullable=False, default="sent")  # sent | logged | failed
+    detail = Column(Text, nullable=True)  # error message / provider reference
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    tender = relationship("Tender")

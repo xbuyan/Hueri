@@ -1,5 +1,8 @@
 name: CI
-on: [push]
+on:
+  push:
+  pull_request:
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -8,4 +11,11 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - run: pip install -r requirements.txt
+        cache: pip
+    - run: pip install -r requirements-dev.txt
+    - name: Import check
+      run: python -c "import main; assert len(main.app.routes) > 0"
+    - name: Run tests
+      run: pytest
+      env:
+        GEMINI_API_KEY: ""

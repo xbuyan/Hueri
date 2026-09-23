@@ -1,0 +1,5 @@
+# Development / test dependencies
+-r requirements.txt
+
+httpx==0.28.1          # FastAPI TestClient backend
+pytest==9.0.3

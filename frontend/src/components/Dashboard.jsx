@@ -20,7 +20,7 @@ const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || "http://localhost:800
 
 export default function TenderScoutDashboard() {
   const [tenders, setTenders] = useState([]);
-  const [stats, setStats] = useState({ total_scanned: 0, high_match_count: 0, active_bids: 0 });
+  const [stats, setStats] = useState({ total_tenders: 0, total_analyzed: 0, high_fit_tenders: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedTender, setSelectedTender] = useState(null);
@@ -133,23 +133,23 @@ export default function TenderScoutDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Total Scanned</p>
-            <p className="text-3xl font-extrabold text-white mt-2">{stats.total_scanned}</p>
+            <p className="text-3xl font-extrabold text-white mt-2">{stats.total_tenders}</p>
             <p className="text-xs text-slate-500 mt-1">Across UNGM, PPIP, WB STEP</p>
           </div>
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs text-emerald-400 uppercase tracking-wider font-semibold">High Match Opportunities</p>
-            <p className="text-3xl font-extrabold text-emerald-400 mt-2">{stats.high_match_count}</p>
-            <p className="text-xs text-slate-500 mt-1">Score ≥ 7.0 / 10.0</p>
+            <p className="text-3xl font-extrabold text-emerald-400 mt-2">{stats.high_fit_tenders}</p>
+            <p className="text-xs text-slate-500 mt-1">Fit verdict from AI analysis</p>
           </div>
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <p className="text-xs text-blue-400 uppercase tracking-wider font-semibold">Active Bids in Pipeline</p>
-            <p className="text-3xl font-extrabold text-blue-400 mt-2">{stats.active_bids}</p>
-            <p className="text-xs text-slate-500 mt-1">Under proposal draft</p>
+            <p className="text-xs text-blue-400 uppercase tracking-wider font-semibold">Analyzed by AI</p>
+            <p className="text-3xl font-extrabold text-blue-400 mt-2">{stats.total_analyzed}</p>
+            <p className="text-xs text-slate-500 mt-1">Tenders with completed evaluations</p>
           </div>
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs text-amber-400 uppercase tracking-wider font-semibold">Sources Monitored</p>
-            <p className="text-3xl font-extrabold text-amber-400 mt-2">4 Portals</p>
-            <p className="text-xs text-slate-500 mt-1">24/7 Automated Agent Cron</p>
+            <p className="text-3xl font-extrabold text-amber-400 mt-2">3 Portals</p>
+            <p className="text-xs text-slate-500 mt-1">UNGM, PPIP, WB STEP</p>
           </div>
         </div>
 
