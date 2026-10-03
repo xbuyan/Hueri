@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     # --- Collectors ---
     COLLECTOR_MAX_RETRIES: int = 3
+    REQUEST_TIMEOUT_S: int = 20
 
     # --- AI agent ---
     GEMINI_API_KEY: Optional[str] = ""

@@ -1,6 +1,6 @@
 import enum
 import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Enum, JSON
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Enum, JSON, false
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -46,6 +46,8 @@ class Tender(Base):
     deadline_str = Column(String(100), nullable=True)
     raw_summary = Column(Text, nullable=True)
     is_mock = Column(Boolean, default=False, nullable=False)
+    is_unreviewed = Column(Boolean, default=False, nullable=False, server_default=false())
+    alerted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     analysis = relationship("TenderAnalysis", back_populates="tender", uselist=False)
