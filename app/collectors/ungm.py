@@ -8,6 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.config import settings
+from app.profile import profile
 from app.collectors.base import RateLimitedCollector, CollectorError
 
 logger = logging.getLogger("collectors.ungm")
@@ -35,38 +36,20 @@ BROWSER_HEADERS = {
 # spends your Gemini quota. Only notices that pass ALL the filters are returned.
 # ---------------------------------------------------------------------------
 
-# One UNGM search is run per term (server-side Title filter); results are merged.
-# Add "environmental" here for a broader net. Every extra term is one more request.
-SEARCH_TERMS = [
-    "ESIA", "EIA", "impact assessment", "audit", "resettlement", "evaluation", "feasibility",
-]
+# Search tuning (keywords, relevance regexes, countries, deadline margin) now comes
+# from profile.yaml, so each client can have their own. One UNGM search is run per
+# term (server-side Title filter) and results are merged; every extra term in the
+# profile is one more request.
+SEARCH_TERMS = list(profile.search.terms)
 
-# Client-side check that the title really contains a relevant term. Word
-# boundaries matter: a bare "esia" would also match "Indonesia" and "Micronesia".
-# Words that, near a bare "EIA", mean it's the assessment — not an airport code
-# (EIA = Eldoret International Airport), an agency initialism, or a place name.
-_EIA_CONTEXT = (
-    r"(?:environmental|consultanc|stud(?:y|ies)|report|review|assessment|"
-    r"screening|scoping|service|expert|licen[cs]e|conduct|undertak|perform|"
-    r"prepar|guideline)"
-)
-
-RELEVANCE_PATTERNS = [
-    re.compile(p, re.IGNORECASE)
-    for p in (
-        r"\besia\b",
-        rf"\beia\b.{{0,40}}{_EIA_CONTEXT}",
-        rf"{_EIA_CONTEXT}.{{0,40}}\beia\b",
-        r"\(\s*eia\s*\)",
-        r"impact assessment", r"\baudit",
-        r"resettlement", r"\bevaluat", r"feasibility",
-    )
-]
+# Client-side check that the title really contains a relevant term (the reasoning
+# behind each pattern is documented in profile.yaml).
+RELEVANCE_PATTERNS = profile.search.compiled_patterns()
 
 # Keep a notice only if its country (or its title/summary) mentions one of these.
-TARGET_COUNTRIES = ("kenya", "uganda", "tanzania", "east africa", "eastern africa")
+TARGET_COUNTRIES = tuple(c.lower() for c in profile.search.target_countries)
 
-MIN_DAYS_TO_DEADLINE = 5   # drop notices closing sooner than this: too late to bid
+MIN_DAYS_TO_DEADLINE = profile.search.min_days_to_deadline   # drop notices closing sooner than this: too late to bid
 PAGE_SIZE_PER_TERM = 15    # UNGM rejects other sizes (confirmed live: 25 and 50 both 400)
 MAX_CANDIDATES = 40        # cap on what is returned (and so on what can be scored)
 MAX_UNREVIEWED = 100       # cap on saved-but-unscored notices per run

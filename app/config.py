@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # --- Collectors ---
     COLLECTOR_MAX_RETRIES: int = 3
     REQUEST_TIMEOUT_S: int = 20
+    # Per-client business config (keywords, countries, services, alert threshold).
+    # Empty = profile.yaml in the project root; relative paths start at the project root.
+    PROFILE_PATH: str = ""
 
     # --- AI agent ---
     GEMINI_API_KEY: Optional[str] = ""
@@ -58,7 +61,7 @@ class Settings(BaseSettings):
 
     # --- Alerts: behaviour ---
     # Minimum relevance score (0-10) that triggers a management notification
-    ALERT_MIN_SCORE: float = 7.0
+    ALERT_MIN_SCORE: Optional[float] = None  # overrides alerts.min_score in profile.yaml when set
     # Send alerts inline with the collection pipeline (False = log a TODO for the worker queue)
     ALERTS_ENABLED: bool = True
 

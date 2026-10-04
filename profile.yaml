@@ -1,0 +1,81 @@
+# TenderScout client profile: HUERI Limited.
+#
+# Business settings live in this file. Secrets and infrastructure (API keys,
+# SMTP, database) stay in .env. profile.example.yaml explains every field.
+# The file is validated at startup: a typo or invalid regex stops the app with
+# a message naming the problem.
+
+company_name: "HUERI Limited"
+description: "Leading environmental, research, and advisory consultancy firm in Kenya and East Africa."
+
+# Sent to Gemini with every tender so the score reflects what the firm does.
+core_services:
+  - "Environmental Impact Assessment (EIA)"
+  - "Environmental and Social Impact Assessment (ESIA)"
+  - "Environmental Audit (EA)"
+  - "Resettlement Action Plan (RAP)"
+  - "Monitoring & Evaluation (M&E)"
+  - "Feasibility Studies"
+
+target_geographies:
+  - "Kenya"
+  - "Uganda"
+  - "Tanzania"
+  - "East Africa"
+
+search:
+  # One search per term on each source (server-side title filter). Every extra
+  # term is one more request, so add terms deliberately.
+  terms:
+    - "ESIA"
+    - "EIA"
+    - "impact assessment"
+    - "audit"
+    - "resettlement"
+    - "evaluation"
+    - "feasibility"
+
+  # A tender is kept for scoring only if its TITLE matches one of these regexes
+  # (case-insensitive); notices that fail only this check are saved as
+  # "unreviewed" with no Gemini spend. Single quotes keep backslashes literal.
+  #   - \besia\b needs word boundaries: a bare "esia" matches Indonesia and Micronesia.
+  #   - EIA is also Eldoret International Airport, so a bare "EIA" only counts
+  #     when a word like "environmental", "study" or "assessment" is within 40
+  #     characters of it, or when it is written "(EIA)".
+  relevance_patterns:
+    - '\besia\b'
+    - '\beia\b.{0,40}(?:environmental|consultanc|stud(?:y|ies)|report|review|assessment|screening|scoping|service|expert|licen[cs]e|conduct|undertak|perform|prepar|guideline)'
+    - '(?:environmental|consultanc|stud(?:y|ies)|report|review|assessment|screening|scoping|service|expert|licen[cs]e|conduct|undertak|perform|prepar|guideline).{0,40}\beia\b'
+    - '\(\s*eia\s*\)'
+    - 'impact assessment'
+    - '\baudit'
+    - 'resettlement'
+    - '\bevaluat'
+    - 'feasibility'
+
+  # UNGM: keep a notice only if its country, title or summary contains one of
+  # these (lowercase substrings).
+  target_countries:
+    - "kenya"
+    - "uganda"
+    - "tanzania"
+    - "east africa"
+    - "eastern africa"
+
+  # World Bank: exact project_ctry_name values, one request series per value.
+  # The two regional labels were seen verbatim in live data and would be
+  # missed by a Kenya/Uganda/Tanzania search alone.
+  worldbank_country_values:
+    - "Kenya"
+    - "Uganda"
+    - "Tanzania"
+    - "Eastern and Southern Africa"
+    - "Horn of Africa"
+
+  # Drop notices closing sooner than this many days from now: too late to bid.
+  min_days_to_deadline: 5
+
+alerts:
+  # Tenders scoring at or above this (0-10) are emailed/texted to management.
+  # ALERT_MIN_SCORE in the environment overrides it when set.
+  min_score: 6.5

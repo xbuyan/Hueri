@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from app.config import settings
+from app.profile import profile
 from app.collectors.base import RateLimitedCollector, CollectorError
 
 logger = logging.getLogger("collectors.worldbank")
@@ -69,41 +70,21 @@ BROWSER_HEADERS = {
 # relevance bar. Kept as separate constants (not imported from ungm.py) so
 # the two collectors can be tuned independently later without coupling them.
 # ---------------------------------------------------------------------------
-SEARCH_TERMS = [
-    "ESIA", "EIA", "impact assessment", "audit", "resettlement", "evaluation", "feasibility",
-]
+# NOTE: these values now come from profile.yaml and are shared with the UNGM
+# collector (the "separate constants" remark in the banner above no longer applies).
+SEARCH_TERMS = list(profile.search.terms)
 
-_EIA_CONTEXT = (
-    r"(?:environmental|consultanc|stud(?:y|ies)|report|review|assessment|"
-    r"screening|scoping|service|expert|licen[cs]e|conduct|undertak|perform|"
-    r"prepar|guideline)"
-)
-
-RELEVANCE_PATTERNS = [
-    re.compile(p, re.IGNORECASE)
-    for p in (
-        r"\besia\b",
-        rf"\beia\b.{{0,40}}{_EIA_CONTEXT}",
-        rf"{_EIA_CONTEXT}.{{0,40}}\beia\b",
-        r"\(\s*eia\s*\)",
-        r"impact assessment", r"\baudit",
-        r"resettlement", r"\bevaluat", r"feasibility",
-    )
-]
+RELEVANCE_PATTERNS = profile.search.compiled_patterns()
 
 # Exact project_ctry_name values queried server-side, one request series per
 # value (the API takes a single value; lists are not OR-combined). The two
 # regional labels were seen verbatim in live API data (a Kenya/Uganda/Tanzania
 # search alone would silently miss notices filed under them).
-TARGET_COUNTRY_VALUES = [
-    "Kenya", "Uganda", "Tanzania",
-    "Eastern and Southern Africa",
-    "Horn of Africa",
-]
+TARGET_COUNTRY_VALUES = list(profile.search.worldbank_country_values)
 # Client-side backstop, derived from the same list so the two can't drift apart.
 TARGET_COUNTRIES = tuple(c.lower() for c in TARGET_COUNTRY_VALUES)
 
-MIN_DAYS_TO_DEADLINE = 5
+MIN_DAYS_TO_DEADLINE = profile.search.min_days_to_deadline
 # Live finding 2026-09-28: 404 of 506 filtered notices were Contract Awards
 # (already awarded, not biddable) and only 2 of 506 carried a deadline, even
 # among Requests for Expression of Interest. So: drop awards outright, and

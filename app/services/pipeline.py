@@ -18,7 +18,8 @@ collector returns it again, so tenders that missed out because Gemini's quota
 ran dry are picked up on a later run.
 
 Alerting is based on the database, not on this run: every scored, real,
-reviewed tender at or above ALERT_MIN_SCORE with no alerted_at is alerted.
+reviewed tender at or above the alert threshold (profile.yaml, or ALERT_MIN_SCORE if set) with no
+alerted_at is alerted.
 alerted_at is stamped only after a real delivery (an email or SMS actually
 sent), so dev log-only runs and failed sends are retried next time.
 """
@@ -32,6 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from app.profile import profile, alert_min_score
 from app import db as app_db  # lazy attribute access keeps tests patchable
 from app.models import Notification, Tender, TenderAnalysis, TenderStatus
 from app.collectors.ungm import ungm_collector
@@ -46,19 +48,9 @@ from app.services.notifier import notifier
 
 logger = logging.getLogger("pipeline")
 
-HUERI_PROFILE = {
-    "company_name": "HUERI Limited",
-    "description": "Leading environmental, research, and advisory consultancy firm in Kenya and East Africa.",
-    "core_services": [
-        "Environmental Impact Assessment (EIA)",
-        "Environmental and Social Impact Assessment (ESIA)",
-        "Environmental Audit (EA)",
-        "Resettlement Action Plan (RAP)",
-        "Monitoring & Evaluation (M&E)",
-        "Feasibility Studies",
-    ],
-    "target_geographies": ["Kenya", "Uganda", "Tanzania", "East Africa"],
-}
+# Who the company is and what it does, sent to Gemini with every tender.
+# Comes from profile.yaml (see app/profile.py).
+COMPANY_PROFILE = profile.company_dict()
 
 STATUS_FAILED = "failed"
 STATUS_QUEUED = "queued"
@@ -109,7 +101,7 @@ async def _pending_alerts(db) -> List[Tender]:
             Tender.alerted_at.is_(None),
             Tender.is_unreviewed.is_(False),
             Tender.is_mock.is_(False),
-            TenderAnalysis.relevance_score >= settings.ALERT_MIN_SCORE,
+            TenderAnalysis.relevance_score >= alert_min_score(),
         )
         .order_by(TenderAnalysis.relevance_score.desc())
     )
@@ -198,7 +190,7 @@ async def run_collection_pipeline(ctx: Dict[str, Any]) -> Dict[str, Any]:
                     tender.title,
                     tender.buyer or "",
                     tender.raw_summary or "",
-                    HUERI_PROFILE,
+                    COMPANY_PROFILE,
                 )
             except FatalAgentError:
                 await db.commit()  # keep everything saved so far

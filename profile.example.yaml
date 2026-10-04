@@ -1,0 +1,64 @@
+# profile.example.yaml
+#
+# Copy this to profile.yaml and edit it for each new client. Business settings
+# live here; secrets and infrastructure (API keys, SMTP, database) stay in .env.
+# The file is validated when the app starts: unknown keys, missing sections and
+# invalid regexes stop it with a message naming the problem.
+#
+# To keep a client's profile elsewhere, set PROFILE_PATH in .env (relative
+# paths are resolved from the project root).
+
+# Who the client is. Sent to Gemini with every tender so scores reflect what
+# the firm actually does, and used in alert email subjects and SMS texts.
+company_name: "Acme Engineering Ltd"
+description: "Civil and water engineering consultancy based in Nairobi, Kenya."
+
+# The client's services, as Gemini should understand them. List the real
+# services, not marketing phrases: matches against this list drive the score.
+core_services:
+  - "Feasibility studies"
+  - "Detailed engineering design"
+  - "Construction supervision"
+
+# Where the client is willing to work.
+target_geographies:
+  - "Kenya"
+  - "Uganda"
+
+search:
+  # One search per term on each source (server-side title filter). Every extra
+  # term is one more request, so add terms deliberately.
+  terms:
+    - "feasibility"
+    - "design"
+    - "supervision"
+
+  # A tender is kept for scoring only if its TITLE matches one of these regexes
+  # (case-insensitive). Notices that fail only this check are saved as
+  # "unreviewed" with no Gemini spend, so nothing is silently lost. Use single
+  # quotes so backslashes stay literal, and \b word boundaries to avoid
+  # matching inside other words.
+  relevance_patterns:
+    - '\bfeasibility'
+    - '\bdetailed design'
+    - '\bsupervision'
+
+  # UNGM: keep a notice only if its country, title or summary contains one of
+  # these (lowercase substrings).
+  target_countries:
+    - "kenya"
+    - "uganda"
+
+  # World Bank: exact project_ctry_name values, one request series per value.
+  # At least one is required while the World Bank source is enabled.
+  worldbank_country_values:
+    - "Kenya"
+    - "Uganda"
+
+  # Drop notices closing sooner than this many days from now (default 5).
+  min_days_to_deadline: 5
+
+alerts:
+  # Tenders scoring at or above this (0-10) trigger email/SMS alerts.
+  # ALERT_MIN_SCORE in the environment overrides it when set.
+  min_score: 7.0
