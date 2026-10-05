@@ -105,7 +105,11 @@ async def _pending_alerts(db) -> List[Tender]:
         )
         .order_by(TenderAnalysis.relevance_score.desc())
     )
-    return list((await db.execute(stmt)).scalars().all())
+    # populate_existing: a tender scored earlier in this same run is already in the
+    # session with its analysis loaded as None; without this that stale value is
+    # reused instead of the analysis row that was just saved.
+    result = await db.execute(stmt, execution_options={"populate_existing": True})
+    return list(result.scalars().all())
 
 
 async def run_collection_pipeline(ctx: Dict[str, Any]) -> Dict[str, Any]:
