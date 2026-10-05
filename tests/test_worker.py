@@ -19,7 +19,7 @@ def test_cron_minutes_parses_config():
         assert _cron_minutes() == {0, 15, 30, 45}
 
         settings.COLLECT_CRON_MINUTES = "bogus"
-        assert _cron_minutes() == {0, 30}  # safe fallback
+        assert _cron_minutes() == {0}  # safe fallback
     finally:
         settings.COLLECT_CRON_MINUTES = original
 

@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +18,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "super-secret-key"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours
+    # Public sign-up is closed by default: accounts are created by an administrator
+    # (python scripts/create_user.py). Set true only for local development.
+    ALLOW_REGISTRATION: bool = False
     # Comma-separated list; extend via env (e.g. https://tenders.hueri.co.ke)
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
 
@@ -71,13 +75,29 @@ class Settings(BaseSettings):
     REDIS_URL: Optional[str] = None
     ANALYTICS_CACHE_TTL_SECONDS: int = 60
 
-    # Cron: minutes past the hour for automatic collection runs (UTC)
-    COLLECT_CRON_MINUTES: str = "0,30"
+    # Cron: automatic collection runs at these hours and minutes (UTC). The default
+    # is 05:00 and 13:00 UTC = 08:00 and 16:00 East Africa Time: twice a day keeps a
+    # free Gemini quota intact. Both settings are comma-separated lists.
+    COLLECT_CRON_HOURS: str = "5,13"
+    COLLECT_CRON_MINUTES: str = "0"
 
     # --- Rate limiting ---
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_AUTH: str = "10/minute"   # per-IP on login/register
     RATE_LIMIT_EXPENSIVE: str = "2/minute"  # per-user on trigger-collect
+
+    @model_validator(mode="after")
+    def _reject_weak_secret_in_production(self):
+        """Anyone who knows the default SECRET_KEY can forge login tokens."""
+        if self.ENVIRONMENT == "production" and (
+            self.SECRET_KEY == "super-secret-key" or len(self.SECRET_KEY) < 32
+        ):
+            raise ValueError(
+                "SECRET_KEY must be a random string of at least 32 characters when "
+                "ENVIRONMENT=production (generate one with: "
+                "python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+            )
+        return self
 
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
