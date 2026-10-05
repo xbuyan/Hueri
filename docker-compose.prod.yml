@@ -1,3 +1,18 @@
+# Production stack for ONE client deployment: db, redis, api, worker, nginx.
+#
+#   alias dcp='docker compose -f docker-compose.prod.yml --env-file .env.production'
+#   dcp up -d --build
+#
+# Settings come from .env.production (see .env.example). The client's business
+# configuration is profile.yaml, mounted read-only: edit it, then `dcp restart api worker`.
+
+x-app-env: &app-env
+  ENVIRONMENT: production
+  LOG_MODE: json
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set in .env.production}@db:5432/${POSTGRES_DB:-tenderscout}
+  REDIS_URL: redis://redis:6379/0
+  PROFILE_PATH: /app/profile.yaml
+
 services:
   db:
     image: postgres:16-alpine
@@ -25,61 +40,39 @@ services:
       timeout: 3s
       retries: 5
 
+  # The api container is the only place that runs database migrations.
+  # --forwarded-allow-ips: the api is reachable only through nginx, so trust its
+  # X-Forwarded-For header; otherwise every user shares one IP and the login
+  # rate limit applies to everyone at once.
   api:
     build: .
+    image: tenderscout-app:latest
     container_name: tenderscout_api_prod
     restart: always
-    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4"
-    environment:
-      ENVIRONMENT: production
-      LOG_MODE: json
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-tenderscout}
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:?set in .env.production}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
-      ALERT_EMAIL_RECIPIENTS: ${ALERT_EMAIL_RECIPIENTS:-}
-      ALERT_SMS_RECIPIENTS: ${ALERT_SMS_RECIPIENTS:-}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-      SMS_API_URL: ${SMS_API_URL:-}
-      SMS_PAYLOAD_TEMPLATE: ${SMS_PAYLOAD_TEMPLATE:-}
-      SMS_HEADERS: ${SMS_HEADERS:-}
+    env_file: .env.production
+    environment: *app-env
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4 --proxy-headers --forwarded-allow-ips '*'"
+    volumes:
+      - ./profile.yaml:/app/profile.yaml:ro
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
 
+  # Same image as the api. Waits for the api to be healthy (migrations done).
   worker:
-    build: .
+    image: tenderscout-app:latest
+    pull_policy: never
     container_name: tenderscout_worker_prod
     restart: always
-    command: sh -c "alembic upgrade head && arq app.worker.WorkerSettings"
-    environment:
-      ENVIRONMENT: production
-      LOG_MODE: json
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-tenderscout}
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:?set in .env.production}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      COLLECT_CRON_HOURS: ${COLLECT_CRON_HOURS:-5,13}
-      COLLECT_CRON_MINUTES: ${COLLECT_CRON_MINUTES:-0}
-      ALERT_EMAIL_RECIPIENTS: ${ALERT_EMAIL_RECIPIENTS:-}
-      ALERT_SMS_RECIPIENTS: ${ALERT_SMS_RECIPIENTS:-}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-      SMS_API_URL: ${SMS_API_URL:-}
-      SMS_PAYLOAD_TEMPLATE: ${SMS_PAYLOAD_TEMPLATE:-}
-      SMS_HEADERS: ${SMS_HEADERS:-}
+    env_file: .env.production
+    environment: *app-env
+    command: arq app.worker.WorkerSettings
+    volumes:
+      - ./profile.yaml:/app/profile.yaml:ro
     depends_on:
-      db:
+      api:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -91,8 +84,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env.production}
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:

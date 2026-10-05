@@ -126,6 +126,15 @@ class SecurityHeadersMiddleware:
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+# --- HEALTH ---
+
+
+@app.get("/api/health")
+async def health():
+    """Liveness probe for Docker and uptime monitors: no login, no database."""
+    return {"status": "ok"}
+
+
 # --- AUTH ROUTES ---
 
 
