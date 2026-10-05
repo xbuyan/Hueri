@@ -3,9 +3,10 @@ FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# No compiler is installed: every pinned dependency publishes a prebuilt wheel for
+# this Python, so the build stays fast. If a future pin needs to compile, pip will
+# fail with a clear error; add build-essential here (apt-get update && apt-get
+# install -y --no-install-recommends build-essential) in that case.
 
 COPY requirements.txt .
 RUN python -m venv /opt/venv \

@@ -69,6 +69,10 @@ services:
     env_file: .env.production
     environment: *app-env
     command: arq app.worker.WorkerSettings
+    # The image's HEALTHCHECK probes the api's HTTP port, which the worker does not
+    # serve; without this Docker would mark the worker unhealthy.
+    healthcheck:
+      disable: true
     volumes:
       - ./profile.yaml:/app/profile.yaml:ro
     depends_on:

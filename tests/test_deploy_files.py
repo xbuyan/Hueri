@@ -62,3 +62,14 @@ def test_health_endpoint_needs_no_login(client):
     res = client.get("/api/health")
     assert res.status_code == 200
     assert res.json() == {"status": "ok"}
+
+
+def test_worker_does_not_inherit_the_api_healthcheck():
+    services = yaml.safe_load(_read("docker-compose.prod.yml"))["services"]
+    assert services["worker"]["healthcheck"] == {"disable": True}
+
+
+def test_frontend_calls_the_api_on_its_own_origin_in_production():
+    source = _read("frontend/src/components/Dashboard.jsx")
+    assert '|| "http://localhost:8000"' not in source
+    assert "import.meta.env?.DEV" in source
