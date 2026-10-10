@@ -14,6 +14,7 @@ pydantic==2.13.5
 pydantic-settings==2.15.0
 email-validator==2.3.0
 python-dotenv==1.2.3
+pyyaml==6.0.3
 
 # Auth
 python-jose[cryptography]==3.5.0

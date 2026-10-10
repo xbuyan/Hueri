@@ -19,7 +19,7 @@ def test_cron_minutes_parses_config():
         assert _cron_minutes() == {0, 15, 30, 45}
 
         settings.COLLECT_CRON_MINUTES = "bogus"
-        assert _cron_minutes() == {0, 30}  # safe fallback
+        assert _cron_minutes() == {0}  # safe fallback
     finally:
         settings.COLLECT_CRON_MINUTES = original
 
@@ -139,7 +139,7 @@ def test_pipeline_module_exists_and_exports():
     import app.services.pipeline as pm
 
     assert callable(pm.run_collection_pipeline)
-    assert pm.HUERI_PROFILE["company_name"] == "HUERI Limited"
+    assert {"company_name", "core_services", "target_geographies"} <= set(pm.COMPANY_PROFILE)
     assert {pm.STATUS_QUEUED, pm.STATUS_RUNNING, pm.STATUS_COMPLETE, pm.STATUS_FAILED} == {
         "queued",
         "running",

@@ -271,15 +271,14 @@ def alert_pipeline(tmp_path, monkeypatch):
 
     import app.services.pipeline as pipeline_module
 
-    async def fake_ungm():
-        return [dict(FAKE_NOTICE)]
+    def fake_ungm_collect():
+        return [dict(FAKE_NOTICE)], []
 
-    async def fake_empty():
-        return []
+    def fake_empty_collect():
+        return [], []
 
-    monkeypatch.setattr(pipeline_module.ungm_collector, "fetch_recent_notices", fake_ungm)
-    monkeypatch.setattr(pipeline_module.ppip_collector, "fetch_recent_notices", fake_empty)
-    monkeypatch.setattr(pipeline_module.worldbank_collector, "fetch_recent_notices_async", fake_empty)
+    monkeypatch.setattr(pipeline_module.ungm_collector, "collect", fake_ungm_collect)
+    monkeypatch.setattr(pipeline_module.worldbank_collector, "collect", fake_empty_collect)
     monkeypatch.setattr(pipeline_module.tender_agent, "analyze_tender", lambda *a, **k: FakeAIResult())
 
     # Configure alert recipients for the pipeline run

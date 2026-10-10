@@ -101,33 +101,43 @@ class FakeAIResult:
 def stubbed_pipeline(client, monkeypatch):
     import app.services.pipeline as pipeline_module
 
-    async def fake_ungm():
-        return [dict(FAKE_NOTICE)]
+    def fake_ungm_collect():
+        return [dict(FAKE_NOTICE)], []
 
-    async def fake_empty():
-        return []
+    def fake_empty_collect():
+        return [], []
 
-    monkeypatch.setattr(pipeline_module.ungm_collector, "fetch_recent_notices", fake_ungm)
-    monkeypatch.setattr(pipeline_module.ppip_collector, "fetch_recent_notices", fake_empty)
-    monkeypatch.setattr(pipeline_module.worldbank_collector, "fetch_recent_notices_async", fake_empty)
+    monkeypatch.setattr(pipeline_module.ungm_collector, "collect", fake_ungm_collect)
+    monkeypatch.setattr(pipeline_module.worldbank_collector, "collect", fake_empty_collect)
     monkeypatch.setattr(pipeline_module.tender_agent, "analyze_tender", lambda *a, **k: FakeAIResult())
     return client
 
 
-def test_collectors_are_fully_async():
-    """Regression guard: collectors must never go back to blocking requests."""
-    import inspect
+def test_collectors_never_block_the_event_loop(client, monkeypatch):
+    """The live collectors are synchronous (requests + politeness sleeps), so the
+    pipeline must run them in worker threads. Calling collect() directly on the
+    event loop would freeze the whole API while a collection run is in progress."""
+    import asyncio
 
-    from app.collectors import ungm, ppip, worldbank
+    import app.services.pipeline as pipeline_module
 
-    assert inspect.iscoroutinefunction(ungm.ungm_collector.fetch_recent_notices)
-    assert inspect.iscoroutinefunction(ppip.ppip_collector.fetch_recent_notices)
-    assert inspect.iscoroutinefunction(worldbank.worldbank_collector.fetch_recent_notices_async)
+    seen = []
 
-    for module in (ungm, ppip, worldbank):
-        assert "import requests" not in inspect.getsource(module), (
-            f"{module.__name__} regressed to blocking 'requests'"
-        )
+    def fake_collect():
+        try:
+            asyncio.get_running_loop()
+            seen.append("on-loop")
+        except RuntimeError:
+            seen.append("off-loop")  # no running loop here = a worker thread
+        return [], []
+
+    monkeypatch.setattr(pipeline_module.ungm_collector, "collect", fake_collect)
+    monkeypatch.setattr(pipeline_module.worldbank_collector, "collect", fake_collect)
+
+    summary = asyncio.run(pipeline_module.run_collection_pipeline({}))
+
+    assert seen == ["off-loop", "off-loop"]
+    assert summary["notices"] == 0
 
 
 def test_trigger_collect_pipeline(stubbed_pipeline):

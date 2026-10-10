@@ -14,9 +14,12 @@ import {
   Bell
 } from "lucide-react";
 
-// Backend base URL — set VITE_API_BASE_URL in the frontend's .env for
-// anything other than local dev against the docker-compose api service.
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || "http://localhost:8000";
+// Backend base URL. A production build is served by the same nginx that proxies
+// /api, so the default there is the same origin (empty = relative URLs) and one
+// build works for every deployment. `npm run dev` talks to the local api; set
+// VITE_API_BASE_URL (even to an empty string) to override either default.
+const API_BASE_URL =
+  import.meta.env?.VITE_API_BASE_URL ?? (import.meta.env?.DEV ? "http://localhost:8000" : "");
 
 export default function TenderScoutDashboard() {
   const [tenders, setTenders] = useState([]);

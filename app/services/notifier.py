@@ -25,6 +25,7 @@ import aiosmtplib
 import httpx
 
 from app.config import settings
+from app.profile import profile, alert_min_score
 
 logger = logging.getLogger("services.notifier")
 
@@ -177,11 +178,11 @@ class Notifier:
 
         subject = (
             f"[{settings.PROJECT_NAME}] {len(tenders)} high-fit "
-            f"tender{'s' if len(tenders) != 1 else ''} for HUERI"
+            f"tender{'s' if len(tenders) != 1 else ''} for {profile.company_name}"
         )
         body = (
             "The following tenders scored above the alert threshold "
-            f"({settings.ALERT_MIN_SCORE:.1f}/10):\n\n" + "\n".join(lines).rstrip()
+            f"({alert_min_score():.1f}/10):\n\n" + "\n".join(lines).rstrip()
         )
         return subject, body
 
@@ -193,7 +194,7 @@ class Notifier:
             title = _get(t, "title") or ""
             title = title if len(title) <= 60 else title[:57] + "..."
             parts.append(f"[{score_str}] {title} ({_get(t, 'source')}) - {_get(t, 'url')}")
-        return "HUERI high-fit tenders: " + " | ".join(parts)
+        return f"{profile.company_name} high-fit tenders: " + " | ".join(parts)
 
     # ------------------------------------------------------------------
     # Delivery backends

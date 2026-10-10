@@ -27,3 +27,23 @@ frontend/dist/
 
 # Docs
 README.md
+
+# Kept out of the Docker image (added by apply_patch11)
+.git
+.gitignore
+.env.*
+!.env.example
+.venv
+venv
+__pycache__
+*.py[cod]
+*.sqlite
+node_modules
+frontend
+archive
+discovered
+tests
+*.bak*
+.hueri-*
+debug_*.html
+apply_patch*.py

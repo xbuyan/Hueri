@@ -126,12 +126,26 @@ class SecurityHeadersMiddleware:
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+# --- HEALTH ---
+
+
+@app.get("/api/health")
+async def health():
+    """Liveness probe for Docker and uptime monitors: no login, no database."""
+    return {"status": "ok"}
+
+
 # --- AUTH ROUTES ---
 
 
 @app.post("/api/auth/register", response_model=UserOut)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def register(request: Request, user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+    if not settings.ALLOW_REGISTRATION:
+        raise HTTPException(
+            status_code=403,
+            detail="Registration is closed. Ask an administrator to create your account.",
+        )
     stmt = select(User).where(User.email == user_in.email)
     res = await db.execute(stmt)
     if res.scalar_one_or_none():

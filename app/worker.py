@@ -68,16 +68,26 @@ async def on_shutdown(ctx: Dict[str, Any]) -> None:
     logger.info("Worker stopped")
 
 
-def _cron_minutes() -> set:
-    """Parse COLLECT_CRON_MINUTES (e.g. "0,30") into a set of minutes."""
+def _parse_cron_set(raw: str, low: int, high: int, name: str, fallback: set) -> set:
+    """Parse a comma-separated list such as "5,13" into a set within [low, high]."""
     try:
-        return {int(m) for m in settings.COLLECT_CRON_MINUTES.split(",") if m.strip()}
+        values = {int(v) for v in raw.split(",") if v.strip()}
     except ValueError:
-        logger.warning(
-            "Invalid COLLECT_CRON_MINUTES=%r; falling back to 0,30",
-            settings.COLLECT_CRON_MINUTES,
-        )
-        return {0, 30}
+        values = set()
+    if not values or any(v < low or v > high for v in values):
+        logger.warning("Invalid %s=%r; falling back to %s", name, raw, sorted(fallback))
+        return set(fallback)
+    return values
+
+
+def _cron_minutes() -> set:
+    """Parse COLLECT_CRON_MINUTES (e.g. "0" or "0,30") into a set of minutes."""
+    return _parse_cron_set(settings.COLLECT_CRON_MINUTES, 0, 59, "COLLECT_CRON_MINUTES", {0})
+
+
+def _cron_hours() -> set:
+    """Parse COLLECT_CRON_HOURS (e.g. "5,13") into a set of UTC hours."""
+    return _parse_cron_set(settings.COLLECT_CRON_HOURS, 0, 23, "COLLECT_CRON_HOURS", {5, 13})
 
 
 class WorkerSettings:
@@ -88,7 +98,7 @@ class WorkerSettings:
     cron_jobs = [
         arq_cron(
             collect_and_notify,
-            hour=None,
+            hour=_cron_hours(),
             minute=_cron_minutes(),
             run_at_startup=False,
             unique=True,
