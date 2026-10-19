@@ -41,10 +41,10 @@ class Downstream:
         await send({"type": "http.response.body", "body": b"ok"})
 
 
-def call(gate, headers, query=b"", scope_type="http"):
+def call(gate, headers, query=b"", scope_type="http", method="POST"):
     scope = {
         "type": scope_type,
-        "method": "POST",
+        "method": method,
         "path": "/mcp",
         "query_string": query,
         "headers": [(k.lower().encode(), v.encode()) for k, v in headers],
@@ -274,6 +274,20 @@ class GateTests(unittest.TestCase):
         text = "\n".join(captured.output)
         self.assertNotIn(TOKEN, text)
         self.assertNotIn("Bearer", text)
+
+    def test_only_post_is_forwarded_after_authentication(self):
+        for method in ("GET", "DELETE", "PUT", "PATCH", "OPTIONS", "HEAD"):
+            with self.subTest(method=method):
+                got, headers = call(self.gate, good_headers(), method=method)
+                self.assertEqual(got, 405)
+                self.assertEqual(headers.get("allow"), "POST")
+                self.assertEqual(self.down.calls, 0, "sentinel: downstream must not run")
+
+    def test_method_check_comes_after_auth_host_and_origin(self):
+        self.assertEqual(call(self.gate, [("host", HOST)], method="GET")[0], 401)
+        self.assertEqual(call(self.gate, [("host", "evil.example")], method="GET")[0], 421)
+        self.assertEqual(call(self.gate, good_headers(origin="https://evil.example"), method="GET")[0], 403)
+        self.assertEqual(self.down.calls, 0)
 
     def test_lifespan_passes_through(self):
         calls = []

@@ -42,3 +42,5 @@ structlog==26.1.0
 
 # Background tasks + cron (arq uses Redis)
 arq==0.28.0
+
+mcp==1.30.0

@@ -5,6 +5,7 @@ Order of checks (cheapest and least informative first):
   2. Origin header, if present, must be in the allowlist   -> 403
   3. No credentials in the query string                    -> 401
   4. Exactly one valid "Authorization: Bearer <token>"     -> 401
+  5. Method must be POST (stateless JSON service)          -> 405
 
 Nothing below the gate (the MCP SDK and its tools) runs unless all four pass.
 Standard library only. Never logs header values, query strings or tokens.
@@ -79,6 +80,12 @@ class SecurityGate:
             await self._reject(send, 401, "unauthorized")
             return
 
+        # 5. Stateless JSON service: only POST is meaningful. GET would open a long-lived SSE
+        #    stream and DELETE targets sessions; the MCP spec allows 405 for both.
+        if scope.get("method") != "POST":
+            await self._reject(send, 405, "method_not_allowed", [(b"allow", b"POST")])
+            return
+
         await self._app(scope, receive, send)
 
     def _authorized(self, values: List[str]) -> bool:
@@ -95,7 +102,7 @@ class SecurityGate:
         return hmac.compare_digest(digest, self._token_digest)
 
     @staticmethod
-    async def _reject(send, status: int, reason: str) -> None:
+    async def _reject(send, status: int, reason: str, extra_headers=()) -> None:
         log.warning("mcp request rejected: %s", reason)
         body = json.dumps({"error": reason}).encode("utf-8")
         await send(
@@ -107,6 +114,7 @@ class SecurityGate:
                     (b"content-length", str(len(body)).encode("ascii")),
                     (b"cache-control", b"no-store"),
                     (b"x-content-type-options", b"nosniff"),
+                    *extra_headers,
                 ],
             }
         )
