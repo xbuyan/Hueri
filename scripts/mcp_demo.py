@@ -301,6 +301,22 @@ async def _provision(ro_password: str) -> None:
         await engine.dispose()
 
 
+def _with_retries(fn, *, what, attempts=6, first_delay=1.0):
+    """Retry on any error with exponential backoff (a cold Postgres container can reset
+    the first connections even after it reports ready)."""
+    import time
+    delay = first_delay
+    for n in range(1, attempts + 1):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001
+            if n == attempts:
+                raise
+            print(f"{what}: attempt {n} failed ({type(exc).__name__}); retrying in {delay:.0f}s")
+            time.sleep(delay)
+            delay = min(delay * 2, 8.0)
+
+
 def cmd_up(args) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(CONFIG_DIR, 0o700)
@@ -321,7 +337,7 @@ def cmd_up(args) -> None:
         print(f"container {CONTAINER} already running")
     wait_ready()
     ro_password = secrets.token_urlsafe(24)
-    asyncio.run(_provision(ro_password))
+    _with_retries(lambda: asyncio.run(_provision(ro_password)), what="provisioning")
     existing = read_env(SERVER_ENV)
     write_env(SERVER_ENV, {
         "MCP_BEARER_TOKEN": existing.get("MCP_BEARER_TOKEN") or secrets.token_urlsafe(32),

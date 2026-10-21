@@ -60,6 +60,7 @@ button[aria-pressed=true]{outline:2px solid var(--ring)}
 .step{border-left:4px solid var(--ok);padding:6px 10px;background:color-mix(in srgb,var(--paper) 60%,transparent)}
 .step.fail{border-left-color:var(--bad)}
 .step .name{font-family:var(--mono);font-weight:600}
+.req{font-weight:600;margin-top:6px;padding-top:10px;border-top:1px solid var(--line)}
 .step .meta{color:var(--muted);font-size:.85rem}
 .step pre{margin:6px 0 0;font:.8rem/1.4 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)}
 .row{display:flex;justify-content:space-between;gap:8px;align-items:center}
@@ -125,8 +126,10 @@ button[aria-pressed=true]{outline:2px solid var(--ring)}
     var d=document.createElement("div"); d.className="msg "+who; d.textContent=text;
     log.appendChild(d); log.scrollTop=log.scrollHeight;
   }
-  function renderTrace(steps){
+  function renderTrace(steps,question){
     traceEmpty.style.display="none";
+    var h=document.createElement("li"); h.className="req"; h.textContent="You asked: "+question;
+    trace.appendChild(h);
     (steps||[]).forEach(function(s){
       var li=document.createElement("li"); li.className="step"+(s.ok?"":" fail");
       var n=document.createElement("div"); n.className="name"; n.textContent=s.tool;
@@ -137,6 +140,7 @@ button[aria-pressed=true]{outline:2px solid var(--ring)}
       if(s.error){var e=document.createElement("div"); e.className="meta"; e.textContent=s.error; li.appendChild(e);}
       trace.appendChild(li);
     });
+    trace.lastElementChild&&trace.lastElementChild.scrollIntoView({block:"nearest"});
   }
   function speak(text){
     if(muted||!("speechSynthesis" in window)) return;
@@ -157,7 +161,7 @@ button[aria-pressed=true]{outline:2px solid var(--ring)}
       var d=await r.json();
       ctx=d.context||ctx;
       if(d.sample_data){badge.classList.add("on");}
-      addMsg(d.reply||"No reply.","bot"); renderTrace(d.steps);
+      addMsg(d.reply||"No reply.","bot"); renderTrace(d.steps,text);
       setState("",""); speak(d.reply||"");
     }catch(e){
       addMsg("I could not reach the demo backend. Check that it is running on port 8800.","bot");
