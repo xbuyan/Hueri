@@ -1,3 +1,5 @@
+> **MCP demo (hackathon):** a read-only MCP server and a simulated Alexa+ page live on this branch. See [docs/MCP_DEMO.md](docs/MCP_DEMO.md) for setup and the demo.
+
 # Hueri — Tender Intelligence Platform
 
 Automated procurement tender scouting for **HUERI Limited** (Nairobi-based ESIA consultancy). The platform collects tender notices from UNGM, Kenya PPIP, and World Bank STEP, scores each one against HUERI's capability profile with an AI agent, and **alerts management by email and SMS** when a high-fit opportunity appears.
