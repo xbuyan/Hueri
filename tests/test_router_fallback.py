@@ -39,3 +39,8 @@ def test_nothing_anywhere_keeps_old_message(monkeypatch):
     monkeypatch.setattr(router, "timed_call", fake)
     turn = asyncio.run(router.run_intent(router.parse("find kenya tenders"), None))
     assert "found no tenders" in turn.reply and turn.context["ids"] == []
+
+
+def test_best_matches_is_a_brief():
+    for phrase in ("What are the best matches?", "show me the best match", "any top picks"):
+        assert router.parse(phrase).name == "brief", phrase

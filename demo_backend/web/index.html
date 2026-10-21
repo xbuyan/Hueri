@@ -156,7 +156,7 @@ button[aria-pressed=true]{outline:2px solid var(--ring)}
       if(!r.ok){throw new Error("The demo backend answered "+r.status);}
       var d=await r.json();
       ctx=d.context||ctx;
-      badge.classList.toggle("on",!!d.sample_data);
+      if(d.sample_data){badge.classList.add("on");}
       addMsg(d.reply||"No reply.","bot"); renderTrace(d.steps);
       setState("",""); speak(d.reply||"");
     }catch(e){

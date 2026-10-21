@@ -93,7 +93,7 @@ def parse(utterance: str, context: Optional[Dict[str, Any]] = None) -> Intent:
         return Intent("details", tender_id=tender_id)
     if tender_id:
         return Intent("details", tender_id=tender_id)
-    if re.search(r"\b(brief|briefing|morning|what'?s new|catch me up|best match|top pick)\b", text):
+    if re.search(r"\b(brief|briefing|morning|what'?s new|catch me up|best matche?s?|top picks?)\b", text):
         return Intent("brief", filters=filters, words=keywords)
     if re.search(r"\b(find|search|show|list|any|tenders?|opportunit\w+|bids?|procurement)\b", text):
         return Intent("search", filters=filters, words=keywords)
