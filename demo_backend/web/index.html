@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HUERI tenders: simulated voice assistant</title>
+<style>
+:root{
+  --paper:#EAF0F3; --panel:#F9FBFC; --ink:#13222C; --muted:#52646F; --line:#C9D6DD;
+  --ring:#16A9CF; --ring-soft:#BFE9F5; --device:#1B2B36; --device-ink:#E7F1F5;
+  --ok:#1D7A4B; --bad:#B3261E; --sample-bg:#FFE9B8; --sample-ink:#6B4300;
+  --sans:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{--paper:#0F1A21; --panel:#16252E; --ink:#E6EFF3; --muted:#9CB0BB; --line:#2B3E49;
+    --ring-soft:#14414F; --sample-bg:#4A3A12; --sample-ink:#FFDD91; --ok:#5BD08F; --bad:#FF8A80;}
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 var(--sans)}
+main{max-width:1100px;margin:0 auto;padding:20px;display:grid;gap:20px;
+  grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+@media (max-width:820px){main{grid-template-columns:1fr}}
+h1{font-size:1.15rem;margin:0 0 2px}
+.sub{color:var(--muted);margin:0 0 14px;font-size:.92rem}
+.device{background:var(--device);color:var(--device-ink);border-radius:28px;padding:22px;
+  display:flex;flex-direction:column;gap:16px}
+.ringwrap{display:flex;align-items:center;gap:16px}
+.ring{width:72px;height:72px;border-radius:50%;flex:none;border:6px solid var(--ring);
+  box-shadow:0 0 0 0 var(--ring-soft);opacity:.55;transition:opacity .2s}
+.ring.listening{opacity:1;animation:pulse 1.2s ease-out infinite}
+.ring.speaking{opacity:1;animation:pulse 2s ease-out infinite;border-color:#7fe0ff}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(22,169,207,.65)}100%{box-shadow:0 0 0 26px rgba(22,169,207,0)}}
+@media (prefers-reduced-motion:reduce){.ring.listening,.ring.speaking{animation:none;box-shadow:0 0 0 8px var(--ring-soft)}}
+.status{font-size:.95rem;min-height:1.4em}
+.badge{display:none;align-self:flex-start;background:var(--sample-bg);color:var(--sample-ink);
+  border-radius:999px;padding:3px 12px;font-weight:600;font-size:.85rem}
+.badge.on{display:inline-block}
+.log{background:var(--panel);color:var(--ink);border-radius:16px;padding:14px;min-height:220px;max-height:46vh;
+  overflow:auto;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:92%;padding:8px 12px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.you{align-self:flex-end;background:var(--ring-soft)}
+.bot{align-self:flex-start;border:1px solid var(--line)}
+.empty{color:var(--muted)}
+form{display:flex;gap:8px}
+input[type=text]{flex:1;min-width:0;font:inherit;padding:11px 14px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink)}
+button{font:inherit;cursor:pointer;border-radius:12px;border:1px solid var(--line);padding:10px 14px;
+  background:var(--panel);color:var(--ink)}
+button.primary{background:var(--ring);border-color:var(--ring);color:#04222C;font-weight:600}
+button[aria-pressed=true]{outline:2px solid var(--ring)}
+:focus-visible{outline:3px solid var(--ring);outline-offset:2px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{font-size:.88rem;padding:6px 12px;border-radius:999px;background:transparent;
+  color:var(--device-ink);border-color:#3b5260}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;align-self:start}
+.panel h2{font-size:1rem;margin:0 0 4px}
+.trace{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.step{border-left:4px solid var(--ok);padding:6px 10px;background:color-mix(in srgb,var(--paper) 60%,transparent)}
+.step.fail{border-left-color:var(--bad)}
+.step .name{font-family:var(--mono);font-weight:600}
+.step .meta{color:var(--muted);font-size:.85rem}
+.step pre{margin:6px 0 0;font:.8rem/1.4 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)}
+.row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.note{color:var(--muted);font-size:.85rem;margin-top:12px}
+</style>
+</head>
+<body>
+<main>
+  <section class="device" aria-label="Simulated voice assistant">
+    <div class="ringwrap">
+      <div id="ring" class="ring" aria-hidden="true"></div>
+      <div>
+        <h1>HUERI tender assistant</h1>
+        <p class="sub" style="color:#9CB6C2;margin:0">Simulated Alexa+ talking to a real MCP server</p>
+      </div>
+    </div>
+    <span id="badge" class="badge" role="status">Sample data</span>
+    <div id="log" class="log" role="log" aria-live="polite">
+      <p class="empty" id="empty">Ask about tenders by typing or tapping the microphone.</p>
+    </div>
+    <div id="status" class="status" aria-live="polite"></div>
+    <form id="form" autocomplete="off">
+      <input id="q" type="text" aria-label="Your request" placeholder="Find environmental audit tenders">
+      <button type="button" id="mic" aria-label="Speak your request">Speak</button>
+      <button type="submit" class="primary">Ask</button>
+    </form>
+    <div class="chips" id="chips"></div>
+    <div class="row">
+      <button type="button" id="mute" aria-pressed="false">Mute voice</button>
+      <button type="button" id="reset">Start over</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="MCP call trace">
+    <h2>Live MCP calls</h2>
+    <div class="sub">Each request below is a real tool call over Streamable HTTP.</div>
+    <ol id="trace" class="trace"></ol>
+    <p class="note" id="traceEmpty">No calls yet.</p>
+    <p class="note">The tender data in this demo is sample data, not live tenders.</p>
+  </section>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var ctx = {ids: []};
+  var $ = function(id){return document.getElementById(id)};
+  var log=$("log"), form=$("form"), q=$("q"), ring=$("ring"), statusEl=$("status"),
+      badge=$("badge"), trace=$("trace"), traceEmpty=$("traceEmpty"), muteBtn=$("mute"),
+      micBtn=$("mic"), empty=$("empty");
+  var muted=false;
+
+  var PROMPTS=["Find environmental audit tenders","Explain the first one","Details of tender 1","What are the best matches?"];
+  PROMPTS.forEach(function(p){
+    var b=document.createElement("button"); b.type="button"; b.textContent=p;
+    b.addEventListener("click",function(){q.value=p; form.requestSubmit();});
+    $("chips").appendChild(b);
+  });
+
+  function setState(s,t){ring.className="ring"+(s?" "+s:""); statusEl.textContent=t||"";}
+  function addMsg(text,who){
+    if(empty){empty.remove(); empty=null;}
+    var d=document.createElement("div"); d.className="msg "+who; d.textContent=text;
+    log.appendChild(d); log.scrollTop=log.scrollHeight;
+  }
+  function renderTrace(steps){
+    traceEmpty.style.display="none";
+    (steps||[]).forEach(function(s){
+      var li=document.createElement("li"); li.className="step"+(s.ok?"":" fail");
+      var n=document.createElement("div"); n.className="name"; n.textContent=s.tool;
+      var m=document.createElement("div"); m.className="meta";
+      m.textContent=(s.ok?"ok":"failed")+(s.ms!=null?" in "+s.ms+" ms":"")+(s.summary?", "+s.summary:"");
+      var p=document.createElement("pre"); p.textContent=JSON.stringify(s.arguments||{},null,2);
+      li.appendChild(n); li.appendChild(m); li.appendChild(p);
+      if(s.error){var e=document.createElement("div"); e.className="meta"; e.textContent=s.error; li.appendChild(e);}
+      trace.appendChild(li);
+    });
+  }
+  function speak(text){
+    if(muted||!("speechSynthesis" in window)) return;
+    try{
+      window.speechSynthesis.cancel();
+      var u=new SpeechSynthesisUtterance(text);
+      u.onstart=function(){setState("speaking","Speaking");};
+      u.onend=u.onerror=function(){setState("","");};
+      window.speechSynthesis.speak(u);
+    }catch(e){setState("","");}
+  }
+  async function ask(text){
+    addMsg(text,"you"); setState("listening","Thinking");
+    try{
+      var r=await fetch("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({utterance:text,context:ctx})});
+      if(!r.ok){throw new Error("The demo backend answered "+r.status);}
+      var d=await r.json();
+      ctx=d.context||ctx;
+      badge.classList.toggle("on",!!d.sample_data);
+      addMsg(d.reply||"No reply.","bot"); renderTrace(d.steps);
+      setState("",""); speak(d.reply||"");
+    }catch(e){
+      addMsg("I could not reach the demo backend. Check that it is running on port 8800.","bot");
+      setState("","");
+    }
+  }
+  form.addEventListener("submit",function(ev){
+    ev.preventDefault(); var t=q.value.trim(); if(!t) return; q.value=""; ask(t);
+  });
+  muteBtn.addEventListener("click",function(){
+    muted=!muted; muteBtn.setAttribute("aria-pressed",String(muted));
+    muteBtn.textContent=muted?"Unmute voice":"Mute voice";
+    if(muted&&"speechSynthesis" in window) window.speechSynthesis.cancel();
+  });
+  $("reset").addEventListener("click",function(){
+    ctx={ids:[]}; log.textContent=""; trace.textContent=""; traceEmpty.style.display="";
+    badge.classList.remove("on"); setState("","");
+    empty=document.createElement("p"); empty.className="empty"; empty.id="empty";
+    empty.textContent="Ask about tenders by typing or tapping the microphone."; log.appendChild(empty);
+  });
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){micBtn.disabled=true; micBtn.title="Voice input is not supported in this browser. Type instead.";}
+  else{
+    micBtn.addEventListener("click",function(){
+      var rec=new SR(); rec.lang="en-US"; rec.interimResults=false;
+      rec.onstart=function(){setState("listening","Listening");};
+      rec.onerror=function(){setState("","Could not hear you. Try typing.");};
+      rec.onend=function(){if(ring.classList.contains("listening")&&statusEl.textContent==="Listening")setState("","");};
+      rec.onresult=function(e){var t=e.results[0][0].transcript; q.value=""; ask(t);};
+      try{rec.start();}catch(e){}
+    });
+  }
+})();
+</script>
+</body>
+</html>

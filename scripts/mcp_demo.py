@@ -566,7 +566,11 @@ def cmd_check(args) -> None:
         result = response.json()["result"]
         data = result.get("structuredContent")
         if not isinstance(data, dict):
-            data = json.loads(result["content"][0]["text"])
+            text = result["content"][0]["text"]
+            try:
+                data = json.loads(text)
+            except ValueError:
+                data = {"ok": False, "error": text[:200]}
         return data["result"] if "ok" not in data and isinstance(data.get("result"), dict) else data
 
     try:
