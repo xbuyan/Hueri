@@ -17,8 +17,12 @@ An assistant can ask the tender database three things, each a real MCP tool:
 | `get_tender_details` | One tender: buyer, deadline (free text as published), stored analysis. |
 | `explain_tender_match` | The stored AI assessment of why a tender does or does not fit HUERI. |
 
-"Brief me on the best matches" makes the assistant chain all three: search, then details, then
-explanation for the top result. The page shows every call, its arguments and its timing.
+Hueri exposes a self-hosted MCP server over Streamable HTTP. The simulated Alexa+ client performs
+real MCP protocol operations (`initialize`, `tools/list`, `tools/call`) and runs a multi-step MCP
+workflow: for "Brief me on the best matches" it searches, then passes the tender ID returned by the
+search into the details and explanation tools when a result is available. The trace shows the
+`tools/list` discovery step and tool calls, with their arguments and timing. It does not display the
+`initialize` request or `notifications/initialized` protocol step that precede each operation.
 
 ## Architecture
 
@@ -32,8 +36,11 @@ Browser (simulated Alexa page, port 8800)
 - The browser never sees the MCP token; the demo backend adds it server-side.
 - The MCP package imports only `app.models`. It has no access to the scoring agent, notifier,
   collectors, worker, or any write path.
-- No LLM is involved in routing: the same request always makes the same tool calls, so the demo is
-  repeatable. (An LLM router can produce the same intents later.)
+- No LLM is involved in routing or tool selection. A deterministic router maps each request to tool
+  calls. Follow-up calls can depend on earlier results: a "brief" request calls details and
+  explanation for the first returned tender when search provides an ID. Thus the same input can
+  result in different tool calls when search results differ. (An LLM router could produce the same
+  intents later; it is not part of this submission.)
 
 ## Security behaviour (verified by `check` and `verify`)
 
@@ -46,7 +53,7 @@ Browser (simulated Alexa page, port 8800)
 
 ## Run it locally
 
-Requirements: Docker, Python 3.12 or newer. (Developed on Python 3.14.4.)
+Requirements: Docker, Python 3.12 or newer. Tested locally on Python 3.14.4; CI runs on Python 3.12.
 Ports used: 55432 (throwaway Postgres), 8765 (MCP), 8800 (demo page). It touches no other container.
 
 ```bash

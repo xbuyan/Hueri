@@ -11,7 +11,7 @@ import json
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 PROTOCOL_VERSION = "2025-11-25"
 _ACCEPT = "application/json, text/event-stream"
@@ -35,6 +35,12 @@ def _parse_body(body: bytes, content_type: str) -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise McpError("MCP server returned an unexpected response shape")
     return data
+
+
+def _validate_response_id(message: Dict[str, Any], expected_id: int) -> None:
+    response_id = message.get("id")
+    if type(response_id) is not int or response_id != expected_id:
+        raise McpError("MCP server returned an invalid response ID")
 
 
 def _unwrap_result(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -84,7 +90,8 @@ class McpClient:
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise McpError(f"cannot reach MCP server ({type(exc).__name__})") from None
 
-    def _call_tool_sync(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def _rpc_sync(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """initialize -> notifications/initialized -> one JSON-RPC request; returns its result."""
         status, body, ctype = self._post(
             {
                 "jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -100,7 +107,15 @@ class McpClient:
         if status != 200:
             raise McpError(f"MCP initialize failed (HTTP {status})")
         init = _parse_body(body, ctype)
-        protocol = (init.get("result") or {}).get("protocolVersion") or PROTOCOL_VERSION
+        _validate_response_id(init, 1)
+        if "error" in init:
+            raise McpError("MCP initialize returned a protocol error")
+        init_result = init.get("result")
+        if not isinstance(init_result, dict):
+            raise McpError("MCP initialize returned an unexpected response shape")
+        protocol = init_result.get("protocolVersion")
+        if not isinstance(protocol, str) or not protocol:
+            raise McpError("MCP initialize returned an invalid protocol version")
 
         status, _, _ = self._post(
             {"jsonrpc": "2.0", "method": "notifications/initialized"}, protocol
@@ -109,22 +124,41 @@ class McpClient:
             raise McpError(f"MCP initialized notification failed (HTTP {status})")
 
         status, body, ctype = self._post(
-            {
-                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                "params": {"name": name, "arguments": arguments},
-            },
-            protocol,
+            {"jsonrpc": "2.0", "id": 2, "method": method, "params": params}, protocol
         )
         if status != 200:
-            raise McpError(f"MCP tools/call failed (HTTP {status})")
+            raise McpError(f"MCP {method} failed (HTTP {status})")
         msg = _parse_body(body, ctype)
+        _validate_response_id(msg, 2)
         if "error" in msg:
-            err = msg["error"] if isinstance(msg["error"], dict) else {}
-            raise McpError(f"MCP protocol error: {str(err.get('message', 'unknown'))[:120]}")
-        return _unwrap_result(msg.get("result") or {})
+            raise McpError(f"MCP {method} returned a protocol error")
+        result = msg.get("result")
+        if not isinstance(result, dict):
+            raise McpError(f"MCP {method} returned an unexpected response shape")
+        return result
+
+    def _call_tool_sync(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        return _unwrap_result(self._rpc_sync("tools/call", {"name": name, "arguments": arguments}))
+
+    def _list_tools_sync(self) -> List[str]:
+        tools = self._rpc_sync("tools/list", {}).get("tools")
+        if not isinstance(tools, list):
+            raise McpError("MCP tools/list returned no tools array")
+        if any(
+            not isinstance(tool, dict)
+            or not isinstance(tool.get("name"), str)
+            or not tool["name"]
+            for tool in tools
+        ):
+            raise McpError("MCP tools/list returned an invalid tools array")
+        return [tool["name"] for tool in tools]
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         return await asyncio.to_thread(self._call_tool_sync, name, arguments)
+
+    async def list_tools(self) -> List[str]:
+        """Real MCP tools/list (names only) over the same Streamable HTTP endpoint."""
+        return await asyncio.to_thread(self._list_tools_sync)
 
 
 async def timed_call(client: Any, name: str, arguments: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
@@ -132,3 +166,10 @@ async def timed_call(client: Any, name: str, arguments: Dict[str, Any]) -> Tuple
     start = time.perf_counter()
     result = await client.call_tool(name, arguments)
     return result, int((time.perf_counter() - start) * 1000)
+
+
+async def timed_list_tools(client: Any) -> Tuple[List[str], int]:
+    """Run MCP tools/list and return (tool names, elapsed_ms)."""
+    start = time.perf_counter()
+    names = await client.list_tools()
+    return names, int((time.perf_counter() - start) * 1000)

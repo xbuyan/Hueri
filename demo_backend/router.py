@@ -5,11 +5,14 @@ demo predictable. An optional LLM router can later produce the same `Intent` obj
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from .mcp_client import McpError, timed_call
+from .mcp_client import McpError, timed_call, timed_list_tools
+
+logger = logging.getLogger(__name__)
 
 MAX_TOOL_CALLS = 5
 
@@ -173,6 +176,24 @@ class _Run:
         self.steps: List[Dict[str, Any]] = []
         self.sample = False
         self.fell_back = False
+        self.discovery: Optional[Dict[str, Any]] = None
+
+    async def discover(self) -> None:
+        """Show MCP tools/list before tool calls and isolate discovery failures."""
+        if not callable(getattr(type(self.client), "list_tools", None)):
+            return
+        step: Dict[str, Any] = {"tool": "tools/list", "arguments": {}}
+        try:
+            names, ms = await timed_list_tools(self.client)
+            step.update(ok=True, ms=ms, summary=f"{len(names)} tool(s): " + ", ".join(names))
+        except McpError as exc:
+            logger.warning("MCP discovery failed (%s)", type(exc).__name__)
+            step.update(ok=False, error="MCP discovery failed", summary="failed")
+        except Exception as exc:
+            # Discovery is optional; do not expose arbitrary client/server exception text.
+            logger.warning("MCP discovery failed (%s)", type(exc).__name__)
+            step.update(ok=False, error="MCP discovery failed", summary="failed")
+        self.discovery = step
 
     async def call(self, tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
         if len(self.steps) >= MAX_TOOL_CALLS:
@@ -307,6 +328,8 @@ HELP = (
 
 async def run_intent(intent: Intent, client: Any, *, include_mock: bool = True) -> Turn:
     run = _Run(client, include_mock)
+    if intent.name != "help":
+        await run.discover()
     ids: List[int] = []
     reply = HELP
     try:
@@ -360,4 +383,5 @@ async def run_intent(intent: Intent, client: Any, *, include_mock: bool = True) 
         reply = f"I couldn't reach the tender service: {exc}."
     if run.sample:
         reply = "Sample data. " + reply
-    return Turn(intent.name, reply, run.steps, {"ids": ids}, run.sample)
+    steps = ([run.discovery] if run.discovery else []) + run.steps
+    return Turn(intent.name, reply, steps, {"ids": ids}, run.sample)

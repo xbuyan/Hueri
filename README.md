@@ -178,3 +178,5 @@ database URL + pool sizing, CORS origins, Gemini key, SMTP and SMS gateway setti
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`) installs dependencies, verifies the app imports, and runs the pytest suite on every push and PR.
+
+License: MIT (see LICENSE)

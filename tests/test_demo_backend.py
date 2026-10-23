@@ -49,6 +49,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(202); self.end_headers(); return
         if m == "initialize":
             out = {"jsonrpc": "2.0", "id": body["id"], "result": {"protocolVersion": "2025-11-25"}}
+        elif m == "tools/list":
+            names = ["search_tenders", "get_tender_details", "explain_tender_match"]
+            out = {"jsonrpc": "2.0", "id": body["id"], "result": {"tools": [{"name": n} for n in names]}}
         else:
             p = body["params"]
             res = _tool(p["name"], p["arguments"])
@@ -160,7 +163,9 @@ def test_brief_orchestrates_three_tools(url):
     assert [c[0] for c in CALLS] == ["search_tenders", "get_tender_details", "explain_tender_match"]
     assert CALLS[1][1]["tender_id"] == 1
     assert "stored AI analysis, not verified" in t.reply
-    assert [s["tool"] for s in t.steps] == [c[0] for c in CALLS]
+    assert t.steps[0]["tool"] == "tools/list" and t.steps[0]["ok"] is True
+    assert t.steps[0]["summary"].startswith("3 tool(s):")
+    assert [s["tool"] for s in t.steps[1:]] == [c[0] for c in CALLS]
 
 
 def test_explain_by_ordinal_uses_context(url):
@@ -173,12 +178,13 @@ def test_explain_by_ordinal_uses_context(url):
 
 def test_tool_error_is_spoken_not_raised(url):
     t = run(run_intent(Intent("details", tender_id=99), McpClient(url, TOKEN)))
-    assert "couldn't get tender 99" in t.reply and t.steps[0]["ok"] is False
+    assert "couldn't get tender 99" in t.reply and t.steps[-1]["ok"] is False
 
 
 def test_service_down_is_spoken_not_raised():
     t = run(run_intent(Intent("details", tender_id=1), McpClient("http://127.0.0.1:9/mcp", TOKEN, timeout=2)))
-    assert "couldn't reach" in t.reply.lower() and t.steps[0]["ok"] is False
+    assert "couldn't reach" in t.reply.lower()
+    assert t.steps[-1]["tool"] == "get_tender_details" and t.steps[-1]["ok"] is False
 
 
 def test_trace_never_contains_token(url):

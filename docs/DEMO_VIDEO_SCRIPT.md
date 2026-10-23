@@ -8,9 +8,9 @@ trace panel are both readable, close other tabs and hide bookmarks.
 |---|---|---|
 | 0:00-0:15 | Title card or the page | "HUERI is an environmental consultancy in Kenya. Its tender scout finds procurement notices and scores them. Today it can answer a voice assistant through MCP." |
 | 0:15-0:40 | Terminal: curl `initialize`, `tools/list` (see docs/MCP_DEMO.md) | "This is a real Streamable HTTP MCP server. A client initializes, lists three read-only tools, and calls them." |
-| 0:40-1:05 | Page: type "Find environmental audit tenders" | "I ask in plain language. The assistant calls search_tenders. Every call shows on the right, with arguments and timing. The badge says this is sample data." |
+| 0:40-1:05 | Page: type "Find environmental audit tenders" | "I ask in plain language. The client discovers the server's tools with tools/list, then calls search_tenders. The trace shows discovery and tool calls with arguments and timing; it doesn't show the initialize handshake. The badge says this is sample data." |
 | 1:05-1:30 | "Explain the first one" | "Now it uses the result it just found and calls explain_tender_match. The explanation is the stored AI analysis, and it says so." |
-| 1:30-2:05 | "What are the best matches?" | "One question, three tools: search, details, explanation, chained automatically. That is orchestration, not a wrapper around one endpoint." |
+| 1:30-2:05 | "What are the best matches?" | "The router searches first. If it finds a tender ID, it then calls details and explanation for that result. Routing is deterministic, with no LLM; follow-up calls depend on the search results." |
 | 2:05-2:25 | "What tenders are open in Kenya?" | "If nothing matches, it says so and offers the top sample tenders instead of failing." |
 | 2:25-2:45 | Terminal: `check` summary line, then `verify` | "The server rejects missing tokens and bad hosts, and the database role is read-only. It cannot write or read user accounts." |
 | 2:45-3:00 | Title card | "A read-only MCP service for tender intelligence. Sample data in this demo; the same server can point at live data." |
